@@ -28,9 +28,10 @@ export default function PreHome() {
           <span className="h-2 w-2 rounded-full bg-zinc-300" />
           Forgeflow
         </Link>
-        <nav className="flex items-center gap-5 text-xs text-zinc-500">
+        <nav className="flex items-center gap-4 text-xs text-zinc-500">
           <a href="#how-it-works" className="hidden transition-colors hover:text-zinc-200 sm:block">How it works</a>
-          <Link href="/workspace" className="transition-colors hover:text-white">Open workspace <ArrowRight className="ml-1 inline h-3 w-3" /></Link>
+          <Link href="/login" className="transition-colors hover:text-white">Sign in</Link>
+          <Link href="/signup" className="rounded-md border border-[#34353d] px-3 py-1.5 text-zinc-200 transition-colors hover:border-zinc-500 hover:text-white">Create account</Link>
         </nav>
       </header>
 

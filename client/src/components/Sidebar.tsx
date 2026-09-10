@@ -141,7 +141,7 @@ export function Sidebar({
           {user ? (
             <button onClick={onLogout} className="w-full text-left px-2.5 py-1.5 rounded-md hover:bg-[#181920] transition-colors">
               <div className="text-xs text-zinc-200 truncate">{user.name}</div>
-              <div className="text-[10px] text-zinc-500 truncate mt-0.5">{user.email} · Sign out</div>
+              <div className="text-[10px] text-zinc-500 truncate mt-0.5">{user.email} · Log out</div>
             </button>
           ) : (
             <button onClick={onOpenAuth} className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-zinc-300 hover:text-white hover:bg-[#181920] transition-colors">

@@ -36,6 +36,7 @@ import { TerminalView } from '../components/TerminalView';
 import { ImportModal } from '../components/ImportModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { toast } from 'sonner';
+import { Link } from 'wouter';
 
 type WorkspaceSection = 'home' | 'projects' | 'source' | 'secrets' | 'settings';
 
@@ -376,6 +377,18 @@ export default function Home() {
               <Columns2 className="w-3.5 h-3.5" />
               <span>Workspace</span>
             </button>
+            {authUser ? (
+              <button
+                onClick={async () => { await forgeaiApi.logout(); setAuthUser(null); setProjects([]); setActiveProjectId(''); setActiveSection('home'); }}
+                className="rounded-md border border-[#292a32] px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white"
+              >
+                Log out
+              </button>
+            ) : (
+              <Link href="/login" className="rounded-md border border-[#292a32] px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white">
+                Sign in
+              </Link>
+            )}
           </div>
 
           {/* Mobile View Switcher (21. Responsive Design) */}
