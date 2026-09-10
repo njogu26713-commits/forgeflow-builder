@@ -13,7 +13,7 @@ const workspaceRoot = path.resolve(process.env.FORGEAI_WORKSPACE_ROOT ?? "/tmp/f
 const safeJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 
 async function projectEnvironment(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>>, run: DevelopmentRunDoc) {
-  const secrets = await db.collection<{ name: string; encryptedValue: string; projectId?: ObjectId | null }>("secrets").find({ userId: run.userId, $or: [{ projectId: run.projectId }, { projectId: null }] }).toArray();
+  const secrets = await db.collection<{ name: string; encryptedValue: string; projectId: ObjectId }>("secrets").find({ userId: run.userId, projectId: run.projectId }).toArray();
   const environment: Record<string, string> = {};
   for (const secret of secrets) {
     try { environment[secret.name] = decryptSecret(secret.encryptedValue); } catch { /* invalid secrets never reach the process */ }

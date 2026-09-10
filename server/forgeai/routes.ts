@@ -16,7 +16,7 @@ const registerSchema = z.object({ name: z.string().trim().min(1).max(80), email:
 const projectSchema = z.object({ name: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).default(""), files: z.array(z.unknown()).max(500).default([]), repository: z.record(z.string(), z.unknown()).nullable().optional(), deployment: z.record(z.string(), z.unknown()).nullable().optional() });
 const chatSchema = z.object({ title: z.string().trim().min(1).max(160).default("New conversation"), projectId: z.string().optional().nullable() });
 const agentSchema = z.object({ chatId: z.string().optional(), projectId: z.string().optional().nullable(), message: z.string().trim().min(1).max(12000), provider: z.string().default("groq") });
-const secretSchema = z.object({ name: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,63}$/), value: z.string().min(1).max(20000), projectId: z.string().optional().nullable() });
+const secretSchema = z.object({ name: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,63}$/), value: z.string().min(1).max(20000), projectId: z.string().min(1) });
 
 function badRequest(res: Response, message: string) {
   return res.status(400).json({ error: message });
@@ -213,18 +213,24 @@ export function registerForgeAiRoutes(app: Express) {
   privateApi.get("/secrets", async (req: ForgeRequest, res) => {
     const db = await getForgeDb();
     if (!db || !req.forgeUser?._id) return databaseUnavailable(res);
-    const secrets = await db.collection<SecretDoc>("secrets").find({ userId: req.forgeUser._id }).sort({ name: 1 }).toArray();
+    const projectId = typeof req.query.projectId === "string" ? toObjectId(req.query.projectId) : null;
+    if (!projectId) return badRequest(res, "A valid project id is required");
+    const project = await db.collection<ProjectDoc>("projects").findOne({ _id: projectId, userId: req.forgeUser._id }, { projection: { _id: 1 } });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const secrets = await db.collection<SecretDoc>("secrets").find({ userId: req.forgeUser._id, projectId }).sort({ name: 1 }).toArray();
     return res.json({ secrets: secrets.map(secretResponse) });
   });
 
   privateApi.post("/secrets", async (req: ForgeRequest, res) => {
     const parsed = secretSchema.safeParse(req.body);
     if (!parsed.success || !req.forgeUser?._id) return badRequest(res, "Secret names must use uppercase letters, numbers, and underscores");
-    const projectId = parsed.data.projectId ? toObjectId(parsed.data.projectId) : null;
-    if (parsed.data.projectId && !projectId) return badRequest(res, "Invalid project id");
+    const projectId = toObjectId(parsed.data.projectId);
+    if (!projectId) return badRequest(res, "A valid project id is required");
     try {
       const db = await getForgeDb();
       if (!db) return databaseUnavailable(res);
+      const project = await db.collection<ProjectDoc>("projects").findOne({ _id: projectId, userId: req.forgeUser._id }, { projection: { _id: 1 } });
+      if (!project) return res.status(404).json({ error: "Project not found" });
       const now = new Date();
       const secret: SecretDoc = { userId: req.forgeUser._id, projectId, name: parsed.data.name, encryptedValue: encryptSecret(parsed.data.value), createdAt: now, updatedAt: now };
       const result = await db.collection<SecretDoc>("secrets").insertOne(secret);
