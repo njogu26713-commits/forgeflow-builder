@@ -7,6 +7,7 @@ export type AgentMessage = {
 
 export interface ForgeAgentProvider {
   complete(messages: AgentMessage[]): Promise<string>;
+  completeStructured<T>(messages: AgentMessage[], parser: (value: unknown) => T): Promise<T>;
 }
 
 export class GroqAgentProvider implements ForgeAgentProvider {
@@ -36,6 +37,24 @@ export class GroqAgentProvider implements ForgeAgentProvider {
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new Error("Agent provider returned an empty response");
     return content;
+  }
+
+  async completeStructured<T>(messages: AgentMessage[], parser: (value: unknown) => T) {
+    if (!hasGroq()) throw new Error("Groq is not configured");
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${forgeConfig.groqApiKey}` },
+      body: JSON.stringify({ model: forgeConfig.groqModel, temperature: 0.1, response_format: { type: "json_object" }, messages }),
+    });
+    if (!response.ok) throw new Error(`Agent provider failed (${response.status})`);
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) throw new Error("Agent provider returned an empty response");
+    try {
+      return parser(JSON.parse(content));
+    } catch {
+      throw new Error("Agent provider returned invalid structured output");
+    }
   }
 }
 

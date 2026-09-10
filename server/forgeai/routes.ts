@@ -9,6 +9,8 @@ import { forgeConfig, hasForgeAuth, hasForgeDatabase } from "./config";
 import { getForgeDb, toObjectId } from "./db";
 import { encryptSecret, maskSecret } from "./secrets";
 import type { ChatDoc, ProjectDoc, SecretDoc, UserDoc } from "./types";
+import { agentRunSchema } from "./agentSchemas";
+import { cancelDevelopmentRun, createDevelopmentRun, getDevelopmentEvents, getDevelopmentRun } from "./orchestrator";
 
 const registerSchema = z.object({ name: z.string().trim().min(1).max(80), email: z.string().trim().email().max(320), password: z.string().min(8).max(200) });
 const projectSchema = z.object({ name: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).default(""), files: z.array(z.unknown()).max(500).default([]), repository: z.record(z.string(), z.unknown()).nullable().optional(), deployment: z.record(z.string(), z.unknown()).nullable().optional() });
@@ -87,6 +89,7 @@ export function registerForgeAiRoutes(app: Express) {
   const privateApi = Router();
   privateApi.use(requireForgeAuth);
   privateApi.use(async (_req, res, next) => { if (!(await getForgeDb())) return databaseUnavailable(res); next(); });
+  const agentRateLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "Too many agent requests. Please wait a moment." } });
 
   privateApi.get("/projects", async (req: ForgeRequest, res) => {
     const db = await getForgeDb();
@@ -134,6 +137,41 @@ export function registerForgeAiRoutes(app: Express) {
     if (!db) return databaseUnavailable(res);
     const result = await db.collection<ProjectDoc>("projects").deleteOne({ _id: id, userId: req.forgeUser._id });
     return result.deletedCount ? res.status(204).send() : res.status(404).json({ error: "Project not found" });
+  });
+
+  privateApi.post("/projects/:projectId/runs", agentRateLimit, async (req: ForgeRequest, res) => {
+    const projectId = idOrBad(req.params.projectId, res);
+    const parsed = agentRunSchema.safeParse(req.body);
+    if (!projectId || !parsed.success || !req.forgeUser?._id) return badRequest(res, "A valid development request is required");
+    const db = await getForgeDb();
+    if (!db) return databaseUnavailable(res);
+    const project = await db.collection<ProjectDoc>("projects").findOne({ _id: projectId, userId: req.forgeUser._id });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    try {
+      const run = await createDevelopmentRun(req.forgeUser._id, project, parsed.data.message, parsed.data.maxAttempts);
+      return res.status(202).json({ run });
+    } catch (error) {
+      console.error("[ForgeAI] Development run creation failed");
+      return res.status(503).json({ error: error instanceof Error ? error.message : "Unable to create development run" });
+    }
+  });
+
+  privateApi.get("/runs/:runId", async (req: ForgeRequest, res) => {
+    if (!req.forgeUser?._id) return res.status(401).json({ error: "Authentication required" });
+    const run = await getDevelopmentRun(req.forgeUser._id, req.params.runId);
+    return run ? res.json({ run }) : res.status(404).json({ error: "Development run not found" });
+  });
+
+  privateApi.get("/runs/:runId/events", async (req: ForgeRequest, res) => {
+    if (!req.forgeUser?._id) return res.status(401).json({ error: "Authentication required" });
+    const after = Number.isFinite(Number(req.query.after)) ? Number(req.query.after) : -1;
+    return res.json({ events: await getDevelopmentEvents(req.forgeUser._id, req.params.runId, after) });
+  });
+
+  privateApi.post("/runs/:runId/cancel", async (req: ForgeRequest, res) => {
+    if (!req.forgeUser?._id) return res.status(401).json({ error: "Authentication required" });
+    const cancelled = await cancelDevelopmentRun(req.forgeUser._id, req.params.runId);
+    return cancelled ? res.json({ success: true }) : res.status(409).json({ error: "Run cannot be cancelled" });
   });
 
   privateApi.get("/chats", async (req: ForgeRequest, res) => {
@@ -212,7 +250,6 @@ export function registerForgeAiRoutes(app: Express) {
     return result.deletedCount ? res.status(204).send() : res.status(404).json({ error: "Secret not found" });
   });
 
-  const agentRateLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "Too many agent requests. Please wait a moment." } });
   privateApi.post("/agent/chat", agentRateLimit, async (req: ForgeRequest, res) => {
     const parsed = agentSchema.safeParse(req.body);
     if (!parsed.success || !req.forgeUser?._id) return badRequest(res, "A message is required");

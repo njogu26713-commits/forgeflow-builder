@@ -1,6 +1,7 @@
 import { Db, MongoClient, ObjectId } from "mongodb";
 import { forgeConfig } from "./config";
 import type { ChatDoc, ProjectDoc, SecretDoc, UserDoc } from "./types";
+import type { DevelopmentEventDoc, DevelopmentRunDoc, ToolCallDoc } from "./runTypes";
 
 let client: MongoClient | null = null;
 let database: Db | null = null;
@@ -24,6 +25,9 @@ async function ensureIndexes(db: Db) {
     db.collection<ProjectDoc>("projects").createIndex({ userId: 1, updatedAt: -1 }),
     db.collection<ChatDoc>("chats").createIndex({ userId: 1, updatedAt: -1 }),
     db.collection<SecretDoc>("secrets").createIndex({ userId: 1, projectId: 1 }),
+    db.collection<DevelopmentRunDoc>("developmentRuns").createIndex({ userId: 1, updatedAt: -1 }),
+    db.collection<DevelopmentEventDoc>("developmentEvents").createIndex({ runId: 1, sequence: 1 }, { unique: true }),
+    db.collection<ToolCallDoc>("toolCalls").createIndex({ runId: 1, createdAt: 1 }),
   ]);
 }
 
