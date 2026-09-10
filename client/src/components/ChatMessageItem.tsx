@@ -2,6 +2,7 @@ import React from 'react';
 import { ChatMessage } from '../types';
 import { AgentHeader } from './AgentHeader';
 import { TechnicalDetails } from './TechnicalDetails';
+import { Streamdown } from 'streamdown';
 
 interface ChatMessageItemProps {
   message: ChatMessage;
@@ -19,7 +20,9 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
 
       {/* Main natural text content with pure whitespace hierarchy */}
       <div className={`text-[13.5px] leading-relaxed ${isUser ? 'text-zinc-100 font-medium' : isSpecializedAgent ? 'border-l-2 border-zinc-600 pl-3 text-zinc-400' : 'text-zinc-300'}`}>
-        <p className="whitespace-pre-wrap max-w-3xl">{message.text}</p>
+        <div className="max-w-3xl prose prose-invert prose-sm [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_pre]:my-3 [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-[#292a32] [&_pre]:bg-[#0b0c0f] [&_pre]:p-3 [&_code]:text-[12px] [&_a]:text-zinc-200 [&_a]:underline">
+          <Streamdown>{message.text}</Streamdown>
+        </div>
         {message.isStreaming && <span className="typewriter-cursor" />}
       </div>
 
