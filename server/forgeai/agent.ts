@@ -57,12 +57,19 @@ export class GroqAgentProvider implements ForgeAgentProvider {
         throw new Error("Agent provider returned invalid structured output");
       }
     };
-    try {
-      return await completeOnce(messages);
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("invalid structured output")) throw error;
-      return completeOnce([...messages, { role: "user", content: "Your previous response was not valid JSON. Return only one JSON object, with no markdown fences, no explanation, and no extra text. Preserve the requested field names and value types." }]);
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await completeOnce(attempt === 0 ? messages : [...messages, {
+          role: "user",
+          content: "Your previous response did not match the required schema. Return exactly one JSON object, with no markdown fences, no explanation, and no extra text. Include every required field, use arrays where requested, use the exact enum values, and keep the narration as one or two natural paragraphs. Correct the previous response rather than changing the requested output shape.",
+        }]);
+      } catch (error) {
+        lastError = error;
+        if (!(error instanceof Error) || !error.message.includes("invalid structured output")) throw error;
+      }
     }
+    throw lastError instanceof Error ? lastError : new Error("Agent provider returned invalid structured output");
   }
 }
 
