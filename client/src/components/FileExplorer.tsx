@@ -5,9 +5,6 @@ import {
   FileCode, 
   ChevronRight, 
   ChevronDown, 
-  Sparkles,
-  Plus,
-  RefreshCw
 } from 'lucide-react';
 import { ProjectFile } from '../types';
 
@@ -15,7 +12,6 @@ interface FileExplorerProps {
   files: ProjectFile[];
   activeFile: ProjectFile | null;
   onSelectFile: (file: ProjectFile) => void;
-  onNewFile?: () => void;
 }
 
 interface FileTreeItemProps {
@@ -99,24 +95,13 @@ function FileTreeItem({ file, level, activeFileId, onSelectFile }: FileTreeItemP
   );
 }
 
-export function FileExplorer({ files, activeFile, onSelectFile, onNewFile }: FileExplorerProps) {
+export function FileExplorer({ files, activeFile, onSelectFile }: FileExplorerProps) {
   return (
     <div className="h-full flex flex-col font-mono text-xs">
       <div className="px-3 py-2 border-b border-[#1d1e24] flex items-center justify-between text-zinc-400">
         <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-sans font-medium">
           Files
         </span>
-        <div className="flex items-center gap-1">
-          {onNewFile && (
-            <button
-              onClick={onNewFile}
-              title="New file"
-              className="p-1 hover:text-white hover:bg-[#1a1b22] rounded transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">

@@ -258,22 +258,7 @@ export default function Home() {
 
   const handleActionButton = (action: string) => {
     if (action === 'create_railway') {
-      toast.success('railway.toml generated and deployment configured');
-      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const confirmMsg: ChatMessage = {
-        id: `dep-conf-${Date.now()}`,
-        sender: 'deployment',
-        text: 'I have configured railway.toml with Nixpacks builder and health check endpoints. The application is production ready.',
-        timestamp,
-        technicalDetails: {
-          filesModified: ['railway.toml'],
-          command: 'railway up --detach',
-          commandResult: 'Deployment initiated: build hash e7b49d'
-        }
-      };
-      setProjects((prev) =>
-        prev.map((p) => p.id === activeProjectId ? { ...p, messages: [...p.messages, confirmMsg] } : p)
-      );
+      toast('Deployment integration is not configured for this project yet');
     } else if (action === 'skip_deployment') {
       toast('Deployment configuration skipped');
     }
@@ -302,14 +287,7 @@ export default function Home() {
   // Terminal command executor
   const handleTerminalCommand = (cmd: string) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    let stdout = `Executed: ${cmd}`;
-    if (cmd === 'npm test') {
-      stdout = '✓ src/auth.test.ts (2 tests passed)\n✓ src/marketplace.test.ts (4 tests passed)\nAll 6 tests passed in 480ms';
-    } else if (cmd.startsWith('git status')) {
-      stdout = 'On branch main\nnothing to commit, working tree clean';
-    } else if (cmd.startsWith('npm run build')) {
-      stdout = 'vite v7.1.7 building for production...\n✓ 48 modules transformed.\nBuild completed in 312ms';
-    }
+    const stdout = 'Command execution is not connected to a project runtime yet.';
 
     const newEntries: TerminalEntry[] = [
       { id: `t-cmd-${Date.now()}`, type: 'cmd', content: `$ ${cmd}`, timestamp },
@@ -540,7 +518,7 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-                  <span>TaskForge Runtime</span>
+                  <span>ForgeAI Runtime</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
                 </div>
               </div>
@@ -553,7 +531,6 @@ export default function Home() {
                     files={currentProject.files}
                     activeFile={activeFile}
                     onSelectFile={handleSelectFile}
-                    onNewFile={() => toast('New file creation modal')}
                   />
                 </div>
 
