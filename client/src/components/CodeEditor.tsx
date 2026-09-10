@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import { X, Copy, Check, FileCode2, Search } from 'lucide-react';
 import { ProjectFile } from '../types';
+
+loader.config({ monaco });
 
 interface CodeEditorProps {
   activeFile: ProjectFile | null;
@@ -34,7 +37,7 @@ export function CodeEditor({ activeFile, openTabs, onSelectTab, onCloseTab, onUp
       <div className="flex items-center gap-3 px-3 text-zinc-500"><button onClick={() => setSearchOpen(value => !value)} title="Search file"><Search className="w-3.5 h-3.5" /></button><button onClick={copy} title="Copy file content">{copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}</button></div>
     </div>
     {searchOpen && <div className="flex items-center gap-2 border-b border-[#202129] bg-[#14151b] px-3 py-1.5"><Search className="h-3 w-3 text-zinc-500" /><input autoFocus value={search} onChange={event => setSearch(event.target.value)} placeholder="Search in file..." className="w-full bg-transparent text-xs text-white outline-none" />{search && <span className="text-[10px] text-zinc-500">{matches} matches</span>}</div>}
-    <div className="min-h-0 flex-1"><Editor height="100%" theme="vs-dark" language={languageFor(activeFile)} value={content} onChange={value => { const next = value ?? ''; setContent(next); onUpdateContent?.(activeFile.id, next); }} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineHeight: 20, padding: { top: 12, bottom: 12 }, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'off', renderWhitespace: 'selection', smoothScrolling: true }} /></div>
+    <div className="min-h-0 flex-1"><Editor height="100%" theme="vs-dark" language={languageFor(activeFile)} value={content} loading={<div className="h-full flex items-center justify-center bg-[#0f1014] text-xs text-zinc-500">Starting Monaco editor…</div>} onChange={value => { const next = value ?? ''; setContent(next); onUpdateContent?.(activeFile.id, next); }} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineHeight: 20, padding: { top: 12, bottom: 12 }, scrollBeyondLastLine: false, tabSize: 2, wordWrap: 'off', renderWhitespace: 'selection', smoothScrolling: true }} /></div>
     <div className="px-3 py-1 bg-[#0c0d10] border-t border-[#1d1e24] flex items-center justify-between text-[11px] text-zinc-500 font-mono"><span>{activeFile.path}</span><span className="flex items-center gap-3"><span>UTF-8</span><span>{languageFor(activeFile)}</span><span>{content.split('\n').length} lines</span></span></div>
   </div>;
 }
