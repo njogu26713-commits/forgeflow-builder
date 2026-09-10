@@ -12,13 +12,13 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
   const isUser = message.sender === 'user';
 
   return (
-    <div className={`rounded-lg border border-[#292a32] bg-[#15161b] px-4 py-3 transition-colors hover:border-[#383a45] ${isUser ? 'border-l-2 border-l-zinc-500' : ''}`}>
+    <div className={isUser ? 'rounded-lg border border-[#292a32] bg-[#15161b] px-4 py-3' : 'px-1 py-1'}>
       {/* Agent or User Identification */}
       <AgentHeader role={message.sender} isStreaming={message.isStreaming} />
 
       {/* Main natural text content with pure whitespace hierarchy */}
-      <div className={`text-[13.5px] leading-relaxed ${isUser ? 'text-zinc-100 font-medium' : 'text-zinc-300'}`}>
-        <p className="whitespace-pre-wrap">{message.text}</p>
+      <div className={`text-[13.5px] leading-relaxed ${isUser ? 'text-zinc-100 font-medium' : 'border-l-2 border-zinc-600 pl-3 text-zinc-400'}`}>
+        <p className="whitespace-pre-wrap max-w-3xl">{message.text}</p>
         {message.isStreaming && <span className="typewriter-cursor" />}
       </div>
 

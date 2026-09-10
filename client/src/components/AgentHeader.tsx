@@ -17,19 +17,19 @@ interface AgentHeaderProps {
 
 export const AGENT_CONFIG: Record<AgentRole, { name: string; icon: React.ElementType }> = {
   planner: {
-    name: 'Planner Agent',
+    name: 'Brain',
     icon: Brain,
   },
   coder: {
-    name: 'Code Writer Agent',
+    name: 'Code2',
     icon: Code2,
   },
   preview: {
-    name: 'Preview Agent',
+    name: 'MonitorCheck',
     icon: MonitorCheck,
   },
   debugger: {
-    name: 'Debugger Agent',
+    name: 'Bug',
     icon: Bug,
   },
   deployment: {
@@ -57,9 +57,8 @@ export function AgentHeader({ role, isStreaming }: AgentHeaderProps) {
 
   return (
     <div className="flex items-center gap-2 mb-2">
-      {/* Lucide white/gray icon with zero colorful background or colored borders */}
-      <Icon className="w-3.5 h-3.5 text-zinc-300" />
-      <span className="text-xs font-medium text-zinc-200 tracking-tight">
+      <Icon className="hidden" />
+      <span className="text-[17px] font-semibold text-zinc-200 tracking-tight">
         {agent.name}
       </span>
       {isStreaming && (
