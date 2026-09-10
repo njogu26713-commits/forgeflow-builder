@@ -23,6 +23,20 @@ async function workspaceFor(projectId: ObjectId) {
   return root;
 }
 
+export async function getProjectPreviewFile(userId: ObjectId, projectId: string) {
+  if (!ObjectId.isValid(projectId)) return null;
+  const db = await getForgeDb();
+  if (!db) return null;
+  const project = await db.collection<ProjectDoc>("projects").findOne({ _id: new ObjectId(projectId), userId }, { projection: { _id: 1 } });
+  if (!project) return null;
+  const root = await workspaceFor(new ObjectId(projectId));
+  for (const filename of ["index.html", "dist/index.html", "build/index.html"]) {
+    const candidate = safePath(root, filename);
+    try { await fs.access(candidate); return candidate; } catch { /* try next */ }
+  }
+  return null;
+}
+
 function safePath(root: string, requested: string) {
   const resolved = path.resolve(root, requested);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new Error("Workspace path escapes project root");
@@ -48,6 +62,28 @@ async function hydrateProjectFiles(root: string, files: unknown[]) {
     }
     if (Array.isArray(file.children)) await hydrateProjectFiles(root, file.children);
   }
+}
+
+async function workspaceFiles(root: string, current = root): Promise<unknown[]> {
+  const entries = await fs.readdir(current, { withFileTypes: true });
+  const result: unknown[] = [];
+  for (const entry of entries) {
+    if (["node_modules", ".git", "dist", "build"].includes(entry.name)) continue;
+    const absolute = path.join(current, entry.name);
+    const relative = path.relative(root, absolute).replaceAll(path.sep, "/");
+    if (entry.isDirectory()) result.push({ id: relative, path: relative, name: entry.name, type: "folder", children: await workspaceFiles(root, absolute) });
+    else {
+      const stat = await fs.stat(absolute);
+      if (stat.size <= 200_000) result.push({ id: relative, path: relative, name: entry.name, type: "file", content: await fs.readFile(absolute, "utf8"), language: path.extname(entry.name).slice(1) });
+    }
+  }
+  return result;
+}
+
+async function syncWorkspaceToProject(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>>, run: DevelopmentRunDoc, root: string) {
+  const files = await workspaceFiles(root);
+  await db.collection<ProjectDoc>("projects").updateOne({ _id: run.projectId, userId: run.userId }, { $set: { files, updatedAt: new Date() } });
+  return files;
 }
 
 const allowedExecutables = new Set(["pnpm", "npm", "yarn", "bun", "node", "npx", "python3", "git"]);
@@ -185,7 +221,8 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
       const result = await applyCode2Action(root, action);
       await recordTool(db, run, "code2", result.tool, { type: action.type, path: action.path, command: action.command }, result.output);
     }
-    await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks });
+    const persistedFiles = await syncWorkspaceToProject(db, run, root);
+    await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks, persistedFiles });
     await transition(db, run, "validating", "monitorcheck", "Code2 handed the workspace to MonitorCheck");
     const after = await inspectWorkspace(root);
     const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation, workspace: after, evidence: { workspaceInspection: after }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));

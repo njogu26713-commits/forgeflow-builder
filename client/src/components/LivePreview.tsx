@@ -50,7 +50,9 @@ export function LivePreview({ url, projectId, state, onInspectNetwork }: LivePre
       <div className="flex-1 overflow-auto bg-[#090a0d] p-4">
         {activeTab === 'app' && (
           <div className="h-full min-h-[260px] flex items-center justify-center rounded-lg border border-dashed border-[#2a2b33] bg-[#0e0f13] p-6 text-center">
-            <div className="max-w-sm space-y-3">
+            {url && state === 'ready' ? (
+              <iframe title="Project preview" src={`${url}?t=${Date.now()}`} className="h-full min-h-[520px] w-full rounded-md border-0 bg-white" sandbox="allow-scripts allow-forms allow-modals" />
+            ) : <div className="max-w-sm space-y-3">
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-[#343640] bg-[#15161b] text-zinc-400">
                 <Monitor className="h-4 w-4" />
               </div>
@@ -62,7 +64,7 @@ export function LivePreview({ url, projectId, state, onInspectNetwork }: LivePre
                 <ShieldCheck className="h-3.5 w-3.5" />
                 <span>Project {projectId || 'not selected'}</span>
               </div>
-            </div>
+            </div>}
           </div>
         )}
 

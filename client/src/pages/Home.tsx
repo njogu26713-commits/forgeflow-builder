@@ -50,7 +50,7 @@ function toProjectData(project: { id: string; name: string; description: string;
   return {
     id: project.id, name: project.name, description: project.description, activeBranch: 'main',
     lastActive: new Date(project.updatedAt).toLocaleDateString(), files: project.files as ProjectFile[],
-    messages: [], terminal: [], previewUrl: '', previewState: 'stopped'
+    messages: [], terminal: [], previewUrl: `/api/projects/${project.id}/preview`, previewState: 'stopped'
   };
 }
 
@@ -277,9 +277,14 @@ export default function Home() {
             technicalDetails: event.payload ? { errors: Array.isArray(event.payload.failures) ? event.payload.failures.map(String) : undefined, handoffTo: event.agent ?? undefined } : undefined,
           } satisfies ChatMessage));
           if (messages.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages] } : project));
+          try {
+            const refreshed = await forgeaiApi.project(projectId);
+            setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: refreshed.project.files as ProjectFile[], lastActive: new Date(refreshed.project.updatedAt).toLocaleDateString(), previewUrl: `/api/projects/${projectId}/preview`, previewState: run.status === 'completed' ? 'ready' : 'building' } : project));
+          } catch { /* event delivery remains useful if refresh briefly races the server write */ }
         }
         setActiveAgentTyping(run.currentAgent ? agentRole(run.currentAgent) : 'planner');
         if (terminalStatuses.has(run.status)) {
+          setProjects(prev => prev.map(project => project.id === projectId ? { ...project, previewState: run.status === 'completed' ? 'ready' : 'error' } : project));
           if (run.status !== 'completed') toast.error(run.lastError ?? `Development run ${run.status}`);
           break;
         }

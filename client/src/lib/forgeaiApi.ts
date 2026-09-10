@@ -54,6 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const forgeaiApi = {
   me: () => request<{ user: ForgeUser | null; configured: boolean }>('/auth/me'),
   projects: () => request<{ projects: ForgeApiProject[] }>('/projects'),
+  project: (projectId: string) => request<{ project: ForgeApiProject }>(`/projects/${projectId}`),
   createProject: (input: { name: string; description?: string }) => request<{ project: ForgeApiProject }>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   chats: () => request<{ chats: ForgeApiChat[] }>('/chats'),
   agentChat: (input: { chatId?: string; projectId?: string | null; message: string; provider?: string }) => request<{ chat: ForgeApiChat; response: string }>('/agent/chat', { method: 'POST', body: JSON.stringify(input) }),

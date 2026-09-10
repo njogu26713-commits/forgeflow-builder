@@ -10,7 +10,7 @@ import { getForgeDb, toObjectId } from "./db";
 import { encryptSecret, maskSecret } from "./secrets";
 import type { ChatDoc, ProjectDoc, SecretDoc, UserDoc } from "./types";
 import { agentRunSchema } from "./agentSchemas";
-import { cancelDevelopmentRun, createDevelopmentRun, getDevelopmentEvents, getDevelopmentRun } from "./orchestrator";
+import { cancelDevelopmentRun, createDevelopmentRun, getDevelopmentEvents, getDevelopmentRun, getProjectPreviewFile } from "./orchestrator";
 
 const registerSchema = z.object({ name: z.string().trim().min(1).max(80), email: z.string().trim().email().max(320), password: z.string().min(8).max(200) });
 const projectSchema = z.object({ name: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).default(""), files: z.array(z.unknown()).max(500).default([]), repository: z.record(z.string(), z.unknown()).nullable().optional(), deployment: z.record(z.string(), z.unknown()).nullable().optional() });
@@ -117,6 +117,12 @@ export function registerForgeAiRoutes(app: Express) {
     const project = db ? await db.collection<ProjectDoc>("projects").findOne({ _id: id, userId: req.forgeUser._id }) : null;
     if (!project) return res.status(404).json({ error: "Project not found" });
     return res.json({ project: projectResponse(project) });
+  });
+
+  privateApi.get("/projects/:id/preview", async (req: ForgeRequest, res) => {
+    if (!req.forgeUser?._id) return res.status(401).json({ error: "Authentication required" });
+    const previewFile = await getProjectPreviewFile(req.forgeUser._id, req.params.id);
+    return previewFile ? res.sendFile(previewFile) : res.status(404).send("No preview has been built for this project yet.");
   });
 
   privateApi.patch("/projects/:id", async (req: ForgeRequest, res) => {
