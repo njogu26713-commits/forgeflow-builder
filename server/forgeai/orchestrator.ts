@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { ObjectId } from "mongodb";
 import { getForgeAgent } from "./agent";
 import { canTransition, diagnosisSchema, implementationSchema, planSchema, runStatusSchema, validationSchema, type AgentName, type AgentPlan, type RunStatus } from "./agentSchemas";
@@ -8,6 +10,7 @@ import type { ProjectDoc } from "./types";
 import type { DevelopmentEventDoc, DevelopmentRunDoc, ToolCallDoc } from "./runTypes";
 
 const workspaceRoot = path.resolve(process.env.FORGEAI_WORKSPACE_ROOT ?? "/tmp/forgeflow-workspaces");
+const execFileAsync = promisify(execFile);
 const safeJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 
 function publicRun(run: DevelopmentRunDoc) {
@@ -33,6 +36,52 @@ async function inspectWorkspace(root: string) {
   let packageJson: Record<string, unknown> | null = null;
   try { packageJson = JSON.parse(await fs.readFile(packagePath, "utf8")) as Record<string, unknown>; } catch { /* optional */ }
   return { root, files, packageJson, inspectedAt: new Date().toISOString() };
+}
+
+async function hydrateProjectFiles(root: string, files: unknown[]) {
+  for (const entry of files) {
+    const file = entry as { path?: unknown; type?: unknown; content?: unknown; children?: unknown[] };
+    if (file.type === "file" && typeof file.path === "string" && typeof file.content === "string") {
+      const target = safePath(root, file.path);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      try { await fs.access(target); } catch { await fs.writeFile(target, file.content, "utf8"); }
+    }
+    if (Array.isArray(file.children)) await hydrateProjectFiles(root, file.children);
+  }
+}
+
+const allowedExecutables = new Set(["pnpm", "npm", "yarn", "bun", "node", "npx", "python3", "git"]);
+async function runControlledCommand(root: string, command: string) {
+  const parts = command.trim().split(/\s+/);
+  const executable = parts.shift() ?? "";
+  if (!allowedExecutables.has(executable)) throw new Error(`Command is not allowed: ${executable}`);
+  if (parts.some(part => ["rm", "sudo", "chmod", "chown", "curl", "wget"].includes(part))) throw new Error("Command contains a restricted operation");
+  try {
+    const result = await execFileAsync(executable, parts, { cwd: root, timeout: 120_000, maxBuffer: 1_000_000, env: { ...process.env, NODE_ENV: "development" } });
+    return { command, stdout: result.stdout.slice(-20000), stderr: result.stderr.slice(-20000), exitCode: 0 };
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string; code?: number };
+    return { command, stdout: (failure.stdout ?? "").slice(-20000), stderr: (failure.stderr ?? "").slice(-20000), exitCode: typeof failure.code === "number" ? failure.code : 1 };
+  }
+}
+
+async function applyCode2Action(root: string, action: { type: string; path?: string; content?: string; command?: string }) {
+  if (action.type === "write" && action.path && action.content !== undefined) {
+    const target = safePath(root, action.path); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, action.content, "utf8");
+    return { tool: "file.write", output: { path: action.path, bytes: Buffer.byteLength(action.content) } };
+  }
+  if (action.type === "patch" && action.path && action.content !== undefined) {
+    const target = safePath(root, action.path); const current = await fs.readFile(target, "utf8"); await fs.writeFile(target, current.includes(action.content) ? current : `${current}\n${action.content}`, "utf8");
+    return { tool: "file.patch", output: { path: action.path, bytes: Buffer.byteLength(action.content) } };
+  }
+  if (action.type === "delete" && action.path) { await fs.rm(safePath(root, action.path), { recursive: true, force: false }); return { tool: "file.delete", output: { path: action.path } };
+  }
+  if (action.type === "rename" && action.path && action.command) { await fs.rename(safePath(root, action.path), safePath(root, action.command)); return { tool: "file.rename", output: { from: action.path, to: action.command } };
+  }
+  if (action.type === "command" && action.command) return { tool: "command.run", output: await runControlledCommand(root, action.command) };
+  if (action.type === "inspect" && action.path) { const content = await fs.readFile(safePath(root, action.path), "utf8"); return { tool: "file.read", output: { path: action.path, content: content.slice(0, 20000) } };
+  }
+  throw new Error("Code2 returned an incomplete or unsupported action");
 }
 
 async function event(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>>, run: DevelopmentRunDoc, kind: DevelopmentEventDoc["kind"], message: string, agent: AgentName | null = null, payload?: Record<string, unknown>) {
@@ -116,6 +165,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
   const project = await db.collection<ProjectDoc>("projects").findOne({ _id: run.projectId, userId: run.userId });
   if (!project) throw new Error("Project not found");
   const root = await workspaceFor(run.projectId);
+  await hydrateProjectFiles(root, project.files);
   await transition(db, run, "inspecting", "brain", "Brain inspected the project workspace");
   const inspected = await inspectWorkspace(root);
   await recordTool(db, run, "brain", "workspace.inspect", {}, inspected);
@@ -132,12 +182,8 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     await transition(db, run, run.attempt === 1 ? "implementing" : "repairing", run.attempt === 1 ? "code2" : "bug", `${run.attempt === 1 ? "Code2 is implementing" : "Code2 is applying a repair"} attempt ${run.attempt}`);
     const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
     for (const action of implementation.actions) {
-      if (action.type === "write" && action.path && action.content !== undefined) {
-        const target = safePath(root, action.path);
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.writeFile(target, action.content, "utf8");
-        await recordTool(db, run, "code2", "file.write", { path: action.path }, { path: action.path, bytes: Buffer.byteLength(action.content) });
-      }
+      const result = await applyCode2Action(root, action);
+      await recordTool(db, run, "code2", result.tool, { type: action.type, path: action.path, command: action.command }, result.output);
     }
     await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks });
     await transition(db, run, "validating", "monitorcheck", "Code2 handed the workspace to MonitorCheck");
