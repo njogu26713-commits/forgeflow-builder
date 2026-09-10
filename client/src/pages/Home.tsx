@@ -186,26 +186,12 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize active file and tabs when project changes
+  // Reset editor state when switching projects; files must be opened explicitly in the new project.
   useEffect(() => {
-    if (currentProject) {
-      const findFirstFile = (files: ProjectFile[]): ProjectFile | null => {
-        for (const f of files) {
-          if (f.type === 'file') return f;
-          if (f.children) {
-            const nested = findFirstFile(f.children);
-            if (nested) return nested;
-          }
-        }
-        return null;
-      };
-
-      const defaultFile = findFirstFile(currentProject.files);
-      if (defaultFile) {
-        setActiveFile(defaultFile);
-        setOpenTabs([defaultFile]);
-      }
-    }
+    setActiveFile(null);
+    setOpenTabs([]);
+    setWorkspaceTab('preview');
+    setMobileView('chat');
   }, [activeProjectId]);
 
   // Auto-scroll chat to bottom smoothly
