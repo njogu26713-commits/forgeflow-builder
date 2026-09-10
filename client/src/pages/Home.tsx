@@ -462,8 +462,8 @@ export default function Home() {
           } ${mobileView !== 'chat' || (activeSection !== 'home' && activeSection !== 'projects') ? 'hidden' : 'flex'}`}>
             {/* Scrollable Conversation Stream */}
             {activeSection === 'home' ? (
-              <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 pb-16">
-                <div className="w-full max-w-3xl mx-auto">
+              <div className="flex-1 flex min-h-0 flex-col items-center justify-center overflow-y-auto px-4 sm:px-6 py-8">
+                <div className="w-full max-w-3xl mx-auto flex flex-col items-center">
                   <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                   <MessageComposer
                     onSendMessage={(text) => triggerAgentHandoff(text)}
