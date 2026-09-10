@@ -5,11 +5,21 @@ import { ObjectId } from "mongodb";
 import { getForgeAgent } from "./agent";
 import { canTransition, diagnosisSchema, implementationSchema, planSchema, runStatusSchema, validationSchema, type AgentName, type AgentPlan, type RunStatus } from "./agentSchemas";
 import { getForgeDb } from "./db";
+import { decryptSecret } from "./secrets";
 import type { ProjectDoc } from "./types";
 import type { DevelopmentEventDoc, DevelopmentRunDoc, ToolCallDoc } from "./runTypes";
 
 const workspaceRoot = path.resolve(process.env.FORGEAI_WORKSPACE_ROOT ?? "/tmp/forgeflow-workspaces");
 const safeJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+
+async function projectEnvironment(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>>, run: DevelopmentRunDoc) {
+  const secrets = await db.collection<{ name: string; encryptedValue: string; projectId?: ObjectId | null }>("secrets").find({ userId: run.userId, $or: [{ projectId: run.projectId }, { projectId: null }] }).toArray();
+  const environment: Record<string, string> = {};
+  for (const secret of secrets) {
+    try { environment[secret.name] = decryptSecret(secret.encryptedValue); } catch { /* invalid secrets never reach the process */ }
+  }
+  return environment;
+}
 
 function publicRun(run: DevelopmentRunDoc) {
   return { ...run, id: run._id?.toHexString(), _id: undefined, userId: undefined, projectId: run.projectId.toHexString() };
@@ -117,11 +127,11 @@ async function detectMissingDependencies(root: string) {
   return Array.from(imports).filter(name => !installed.has(name) && /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(name)).sort();
 }
 
-async function installMissingDependencies(root: string, packages: string[], onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
+async function installMissingDependencies(root: string, packages: string[], environment: Record<string, string>, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
   if (!packages.length) return null;
   let manager = "npm";
   try { await fs.access(path.join(root, "pnpm-lock.yaml")); manager = "pnpm"; } catch { try { await fs.access(path.join(root, "yarn.lock")); manager = "yarn"; } catch { try { await fs.access(path.join(root, "bun.lockb")); manager = "bun"; } catch { /* npm default */ } } }
-  return runControlledCommand(root, `${manager} install ${packages.join(" ")}`, onOutput);
+  return runControlledCommand(root, `${manager} install ${packages.join(" ")}`, environment, onOutput);
 }
 
 const allowedExecutables = new Set(["pnpm", "npm", "yarn", "bun", "node", "npx", "python3", "git"]);
@@ -133,13 +143,13 @@ function tokenizeCommand(command: string) {
   return parts;
 }
 
-async function runControlledCommand(root: string, command: string, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
+async function runControlledCommand(root: string, command: string, environment: Record<string, string> = {}, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
   const parts = tokenizeCommand(command);
   const executable = parts.shift() ?? "";
   if (!allowedExecutables.has(executable)) throw new Error(`Command is not allowed: ${executable}`);
   if (/[|;&><`$]/.test(command) || parts.some(part => ["rm", "sudo", "chmod", "chown", "curl", "wget"].includes(part))) throw new Error("Command contains a restricted shell operation");
   return new Promise<{ command: string; stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-    const child = spawn(executable, parts, { cwd: root, env: { ...process.env, NODE_ENV: "development" }, shell: false });
+    const child = spawn(executable, parts, { cwd: root, env: { ...process.env, ...environment, NODE_ENV: "development" }, shell: false });
     let stdout = ""; let stderr = ""; let settled = false;
     const append = (target: "stdout" | "stderr", chunk: Buffer) => {
       const text = chunk.toString();
@@ -154,7 +164,7 @@ async function runControlledCommand(root: string, command: string, onOutput?: (t
   });
 }
 
-async function applyCode2Action(root: string, action: { type: string; path?: string; content?: string; command?: string }, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
+async function applyCode2Action(root: string, action: { type: string; path?: string; content?: string; command?: string }, environment: Record<string, string>, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
   if (action.type === "write" && action.path && action.content !== undefined) {
     const target = safePath(root, action.path); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, action.content, "utf8");
     return { tool: "file.write", output: { path: action.path, bytes: Buffer.byteLength(action.content) } };
@@ -167,7 +177,7 @@ async function applyCode2Action(root: string, action: { type: string; path?: str
   }
   if (action.type === "rename" && action.path && action.command) { await fs.rename(safePath(root, action.path), safePath(root, action.command)); return { tool: "file.rename", output: { from: action.path, to: action.command } };
   }
-  if (action.type === "command" && action.command) return { tool: "command.run", output: await runControlledCommand(root, action.command, onOutput) };
+  if (action.type === "command" && action.command) return { tool: "command.run", output: await runControlledCommand(root, action.command, environment, onOutput) };
   if (action.type === "inspect" && action.path) { const content = await fs.readFile(safePath(root, action.path), "utf8"); return { tool: "file.read", output: { path: action.path, content: content.slice(0, 20000) } };
   }
   throw new Error("Code2 returned an incomplete or unsupported action");
@@ -255,6 +265,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
   if (!project) throw new Error("Project not found");
   const root = await workspaceFor(run.projectId);
   await hydrateProjectFiles(root, project.files);
+  const environment = await projectEnvironment(db, run);
   await transition(db, run, "inspecting", "brain", "Brain inspected the project workspace");
   const inspected = await inspectWorkspace(root);
   await recordTool(db, run, "brain", "workspace.inspect", {}, inspected);
@@ -273,7 +284,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, commandResults, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
     for (const action of implementation.actions) {
       if (action.type === "command" && action.command) await event(db, run, "tool_started", `Code2 is running ${action.command}`, "code2", { command: action.command });
-      const result = await applyCode2Action(root, action, async (type, content) => {
+      const result = await applyCode2Action(root, action, environment, async (type, content) => {
         await event(db, run, "tool_output", content, "code2", { type, command: action.command });
       });
       if (result.tool === "command.run") commandResults.push(result.output);
@@ -283,7 +294,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     if (missingDependencies.length) {
       const installCommand = `npm install ${missingDependencies.join(" ")}`;
       await event(db, run, "tool_started", `Code2 detected missing dependencies: ${missingDependencies.join(", ")}`, "code2", { command: installCommand, packages: missingDependencies });
-      const installResult = await installMissingDependencies(root, missingDependencies, async (type, content) => {
+      const installResult = await installMissingDependencies(root, missingDependencies, environment, async (type, content) => {
         await event(db, run, "tool_output", content, "code2", { type, command: installCommand, automatic: true });
       });
       if (installResult) {
