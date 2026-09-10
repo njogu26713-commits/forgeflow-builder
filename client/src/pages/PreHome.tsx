@@ -47,10 +47,10 @@ export default function PreHome() {
             ForgeAI turns a plain-language idea into an organized software workspace. Plan with agents, write code, inspect a live preview, and keep moving from one calm interface.
           </p>
           <div className="mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <Link href="/workspace" className="inline-flex items-center gap-2 rounded-md bg-zinc-100 px-4 py-2.5 text-sm font-medium text-zinc-950 transition-colors hover:bg-white">
-              Start building <ArrowRight className="h-4 w-4" />
+            <Link href="/signup" className="inline-flex items-center gap-2 rounded-md bg-zinc-100 px-4 py-2.5 text-sm font-medium text-zinc-950 transition-colors hover:bg-white">
+              Create account <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/workspace" className="px-2 py-2.5 text-sm text-zinc-500 transition-colors hover:text-zinc-200">Explore the workspace</Link>
+            <Link href="/login" className="px-2 py-2.5 text-sm text-zinc-500 transition-colors hover:text-zinc-200">Already have an account?</Link>
           </div>
           <div className="mt-10 flex items-center gap-2 text-xs text-zinc-600">
             <ShieldCheck className="h-3.5 w-3.5" />
