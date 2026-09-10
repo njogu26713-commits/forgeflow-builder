@@ -24,6 +24,7 @@ export interface ChatMessage {
   technicalDetails?: TechnicalDetail;
   actionButtons?: { id: string; label: string; action: string; primary?: boolean }[];
   isStreaming?: boolean;
+  blocks?: import('./components/NativeBlocks').NativeBlock[];
 }
 
 export interface ProjectFile {

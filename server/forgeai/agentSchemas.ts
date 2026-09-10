@@ -3,9 +3,20 @@ import { z } from "zod";
 export const agentNameSchema = z.enum(["brain", "code2", "monitorcheck", "bug"]);
 export type AgentName = z.infer<typeof agentNameSchema>;
 
+const nativeBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("artifact"), title: z.string().max(200), description: z.string().max(500).optional(), url: z.string().url().optional(), content: z.string().max(20000).optional(), action: z.object({ label: z.string().max(80), action: z.string().max(100) }).optional() }),
+  z.object({ type: z.literal("form"), title: z.string().max(200), fields: z.array(z.object({ name: z.string().max(80), label: z.string().max(120), type: z.enum(["text", "email", "number", "textarea"]).optional(), placeholder: z.string().max(200).optional(), required: z.boolean().optional() })).max(20), submitLabel: z.string().max(80).optional(), action: z.string().max(100).optional() }),
+  z.object({ type: z.literal("table"), title: z.string().max(200).optional(), columns: z.array(z.string().max(100)).max(20), rows: z.array(z.array(z.union([z.string().max(500), z.number()]))).max(100) }),
+  z.object({ type: z.literal("chart"), title: z.string().max(200).optional(), kind: z.enum(["line", "bar"]).optional(), xKey: z.string().max(80), data: z.array(z.record(z.string(), z.union([z.string().max(200), z.number()]))).max(100), series: z.array(z.string().max(80)).max(10) }),
+  z.object({ type: z.literal("file-tree"), title: z.string().max(200).optional(), files: z.array(z.object({ path: z.string().max(500), type: z.enum(["file", "folder"]) })).max(200) }),
+  z.object({ type: z.literal("terminal"), title: z.string().max(200).optional(), command: z.string().max(1000).optional(), output: z.string().max(20000).optional(), status: z.enum(["running", "success", "error"]).optional() }),
+]);
+export const nativeBlocksSchema = z.array(nativeBlockSchema).max(8);
+
 export const planSchema = z.object({
   summary: z.string().min(1).max(4000),
   narration: z.string().max(5000).default(""),
+  blocks: nativeBlocksSchema.optional(),
   assumptions: z.array(z.string().max(500)).max(20),
   acceptanceCriteria: z.array(z.string().max(500)).min(1).max(30),
   steps: z.array(z.object({
@@ -28,6 +39,7 @@ export type AgentPlan = z.infer<typeof planSchema>;
 export const implementationSchema = z.object({
   summary: z.string().min(1).max(4000),
   narration: z.string().max(5000).default(""),
+  blocks: nativeBlocksSchema.optional(),
   actions: z.array(z.object({
     type: z.enum(["inspect", "write", "patch", "delete", "rename", "command"]),
     path: z.string().max(500).optional(),
@@ -42,6 +54,7 @@ export type ImplementationResult = z.infer<typeof implementationSchema>;
 export const validationSchema = z.object({
   status: z.enum(["passed", "failed", "blocked"]),
   narration: z.string().max(5000).default(""),
+  blocks: nativeBlocksSchema.optional(),
   confidence: z.enum(["high", "medium", "low"]),
   checks: z.array(z.object({ name: z.string().max(200), status: z.enum(["passed", "failed", "skipped"]), evidence: z.array(z.string().max(1000)).max(10) })).max(50),
   failures: z.array(z.object({ category: z.enum(["build", "test", "runtime", "browser", "network", "configuration"]), message: z.string().max(2000), reproduction: z.string().max(2000).optional(), likelyFiles: z.array(z.string().max(500)).max(20).optional() })).max(20),
@@ -52,6 +65,7 @@ export type ValidationResult = z.infer<typeof validationSchema>;
 export const diagnosisSchema = z.object({
   summary: z.string().min(1).max(3000),
   narration: z.string().max(5000).default(""),
+  blocks: nativeBlocksSchema.optional(),
   category: z.enum(["build", "test", "runtime", "browser", "network", "configuration", "unknown"]),
   confidence: z.enum(["high", "medium", "low"]),
   rootCause: z.string().min(1).max(3000),

@@ -3,6 +3,7 @@ import { ChatMessage } from '../types';
 import { AgentHeader } from './AgentHeader';
 import { TechnicalDetails } from './TechnicalDetails';
 import { Streamdown } from 'streamdown';
+import { NativeBlocks } from './NativeBlocks';
 
 interface ChatMessageItemProps {
   message: ChatMessage;
@@ -25,6 +26,10 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
         </div>
         {message.isStreaming && <span className="typewriter-cursor" />}
       </div>
+
+      {message.blocks && message.blocks.length > 0 && (
+        <NativeBlocks blocks={message.blocks} onAction={(action, payload) => onActionButtonClick?.(action)} />
+      )}
 
       {/* Technical Details: minimal, collapsed by default, nested only when useful */}
       {message.technicalDetails && (

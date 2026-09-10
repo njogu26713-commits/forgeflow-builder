@@ -273,6 +273,7 @@ export default function Home() {
             sender: agentRole(event.agent),
             text: event.message ?? '',
             timestamp: new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            blocks: Array.isArray(event.payload?.blocks) ? event.payload.blocks as ChatMessage['blocks'] : undefined,
             technicalDetails: event.payload ? { errors: Array.isArray(event.payload.failures) ? event.payload.failures.map(String) : undefined, handoffTo: event.agent ?? undefined } : undefined,
           } satisfies ChatMessage));
           if (messages.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages] } : project));
