@@ -325,7 +325,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-[#0c0d0e] text-[#f4f4f5]">
+    <div className="flex h-screen min-h-0 w-full overflow-hidden bg-[#0c0d0e] text-[#f4f4f5]">
       {/* 4. Left Sidebar: Narrow, minimal, dark, no cards */}
       <Sidebar
         projects={projects}
@@ -358,7 +358,7 @@ export default function Home() {
       />
 
       {/* Main Continuous Workspace */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen relative">
+      <div className="flex-1 flex h-screen min-h-0 flex-col min-w-0 relative overflow-hidden">
         {/* Top Minimal Workspace Nav Bar: functional buttons, subtle separators */}
         <header className="h-11 border-b border-[#1d1e24] px-4 flex items-center justify-between text-xs bg-[#0c0d0e] z-10 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -443,9 +443,9 @@ export default function Home() {
         </header>
 
         {/* Continuous Body: Conversation + Coding Workspace */}
-        <div className="flex-1 flex min-h-[calc(100vh-2.75rem)] items-start relative gap-3 bg-[#090a0d] p-3 md:p-4">
+        <div className="flex-1 flex min-h-0 h-[calc(100vh-2.75rem)] items-stretch relative gap-3 overflow-hidden bg-[#090a0d] p-3 md:p-4">
           {/* Main Chat / Conversation: Visible on desktop always, or when mobileView === 'chat' */}
-          <div className={`flex flex-col min-h-[calc(100vh-3.5rem)] overflow-hidden rounded-xl border border-[#292a32] bg-[#111216] shadow-xl shadow-black/10 transition-all duration-150 ${
+          <div className={`flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[#292a32] bg-[#111216] shadow-xl shadow-black/10 transition-all duration-150 ${
             workspaceMode === 'split-workspace' 
               ? 'w-full lg:w-[48%]' 
               : 'w-full max-w-4xl mx-auto'
@@ -507,7 +507,7 @@ export default function Home() {
           {/* 11. Code Workspace Panel: Files | Editor | Preview | Terminal */}
           {/* Desktop split view */}
           {workspaceMode === 'split-workspace' && activeSection === 'projects' && (
-            <div className="hidden lg:flex flex-1 flex-col min-h-[calc(100vh-3.5rem)] overflow-hidden rounded-xl border border-[#292a32] bg-[#0f1014] shadow-xl shadow-black/10">
+            <div className="hidden lg:flex flex-1 h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[#292a32] bg-[#0f1014] shadow-xl shadow-black/10">
               {/* Workspace Navigation Bar: Files | Editor | Preview | Terminal */}
               <div className="h-9 border-b border-[#1d1e24] bg-[#0c0d10] px-3 flex items-center justify-between text-xs text-zinc-400">
                 <div className="flex items-center gap-4 font-medium">
