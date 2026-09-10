@@ -281,15 +281,32 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     run.attempt += 1;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { attempt: run.attempt, updatedAt: new Date() } });
     await transition(db, run, run.attempt === 1 ? "implementing" : "repairing", run.attempt === 1 ? "code2" : "bug", `${run.attempt === 1 ? "Code2 is implementing" : "Code2 is applying a repair"} attempt ${run.attempt}`);
-    const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, commandResults, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
-    for (const action of implementation.actions) {
-      if (action.type === "command" && action.command) await event(db, run, "tool_started", `Code2 is running ${action.command}`, "code2", { command: action.command });
-      const result = await applyCode2Action(root, action, environment, async (type, content) => {
-        await event(db, run, "tool_output", content, "code2", { type, command: action.command });
-      });
-      if (result.tool === "command.run") commandResults.push(result.output);
-      await recordTool(db, run, "code2", result.tool, { type: action.type, path: action.path, command: action.command }, result.output);
+    let implementation: ReturnType<typeof implementationSchema.parse> | null = null;
+    const toolResults: Record<string, unknown>[] = [];
+    const allActions: typeof implementationSchema extends never ? never[] : Array<{ type: "inspect" | "write" | "patch" | "delete" | "rename" | "command"; path?: string; content?: string; command?: string }> = [];
+    const changedFiles = new Set<string>();
+    for (let round = 1; round <= 6; round += 1) {
+      const nextImplementation = await getForgeAgent().completeStructured([
+        { role: "system", content: `${code2Prompt} Work in iterative tool-call rounds. Inspect or read files first when you need context. After receiving toolResults, choose the next action. Return an empty actions array only when implementation is complete and ready for MonitorCheck.` },
+        { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, commandResults, workspace: await inspectWorkspace(root), toolResults, round, maxRounds: 6, outputSchema: "summary, actions, filesChanged, handoff" }) },
+      ], value => implementationSchema.parse(value));
+      implementation = nextImplementation;
+      await event(db, run, "agent_message", nextImplementation.narration || nextImplementation.summary, "code2", { round, filesChanged: nextImplementation.filesChanged, blocks: nextImplementation.blocks });
+      if (!nextImplementation.actions.length) break;
+      for (const action of nextImplementation.actions) {
+        if (action.path) changedFiles.add(action.path);
+        if (action.type === "command" && action.command) await event(db, run, "tool_started", `Code2 is running ${action.command}`, "code2", { command: action.command, round });
+        const result = await applyCode2Action(root, action, environment, async (type, content) => {
+          await event(db, run, "tool_output", content, "code2", { type, command: action.command, round });
+        });
+        if (result.tool === "command.run") commandResults.push(result.output);
+        const resultRecord = { tool: result.tool, input: { type: action.type, path: action.path, command: action.command }, output: result.output };
+        toolResults.push(resultRecord);
+        allActions.push(action);
+        await recordTool(db, run, "code2", result.tool, resultRecord.input, result.output);
+      }
     }
+    if (!implementation) throw new Error("Code2 returned no implementation round");
     const missingDependencies = await detectMissingDependencies(root);
     if (missingDependencies.length) {
       const installCommand = `npm install ${missingDependencies.join(" ")}`;
@@ -303,10 +320,11 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
       }
     }
     const persistedFiles = await syncWorkspaceToProject(db, run, root);
-    await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks, persistedFiles });
+    const implementationSummary = { ...implementation, actions: allActions, filesChanged: Array.from(new Set(implementation.filesChanged.concat(Array.from(changedFiles)))) };
+    await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementationSummary.filesChanged, blocks: implementation.blocks, persistedFiles });
     await transition(db, run, "validating", "monitorcheck", "Code2 handed the workspace to MonitorCheck");
     const after = await inspectWorkspace(root);
-    const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation, commandResults, workspace: after, evidence: { workspaceInspection: after, commandResults }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));
+    const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation: implementationSummary, commandResults, workspace: after, evidence: { workspaceInspection: after, commandResults }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));
     run.validation = validation;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { validation, updatedAt: new Date() } });
     await event(db, run, "validation_result", validation.narration || `MonitorCheck ${validation.status}`, "monitorcheck", safeJson(validation));
