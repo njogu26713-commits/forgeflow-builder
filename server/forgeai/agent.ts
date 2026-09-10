@@ -30,7 +30,8 @@ export class GroqAgentProvider implements ForgeAgentProvider {
       body: JSON.stringify({ model: forgeConfig.groqModel, temperature: 0.2, messages }),
     });
     if (!response.ok) {
-      console.error(`[ForgeAI] Groq request failed with status ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[ForgeAI] Groq request failed with status ${response.status}: ${errorText.slice(0, 1000)}`);
       throw new Error(`Agent provider failed (${response.status})`);
     }
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -47,7 +48,11 @@ export class GroqAgentProvider implements ForgeAgentProvider {
         headers: { "content-type": "application/json", authorization: `Bearer ${forgeConfig.groqApiKey}` },
         body: JSON.stringify({ model: forgeConfig.groqModel, temperature: 0.1, response_format: { type: "json_object" }, messages: inputMessages }),
       });
-      if (!response.ok) throw new Error(`Agent provider failed (${response.status})`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ForgeAI] Groq structured request failed with status ${response.status}: ${errorText.slice(0, 1000)}`);
+        throw new Error(`Agent provider failed (${response.status})`);
+      }
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
       const content = payload.choices?.[0]?.message?.content;
       if (!content) throw new Error("Agent provider returned an empty response");
