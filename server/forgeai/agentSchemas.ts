@@ -5,6 +5,7 @@ export type AgentName = z.infer<typeof agentNameSchema>;
 
 export const planSchema = z.object({
   summary: z.string().min(1).max(4000),
+  narration: z.string().max(5000).default(""),
   assumptions: z.array(z.string().max(500)).max(20),
   acceptanceCriteria: z.array(z.string().max(500)).min(1).max(30),
   steps: z.array(z.object({
@@ -26,6 +27,7 @@ export type AgentPlan = z.infer<typeof planSchema>;
 
 export const implementationSchema = z.object({
   summary: z.string().min(1).max(4000),
+  narration: z.string().max(5000).default(""),
   actions: z.array(z.object({
     type: z.enum(["inspect", "write", "patch", "delete", "rename", "command"]),
     path: z.string().max(500).optional(),
@@ -39,6 +41,7 @@ export type ImplementationResult = z.infer<typeof implementationSchema>;
 
 export const validationSchema = z.object({
   status: z.enum(["passed", "failed", "blocked"]),
+  narration: z.string().max(5000).default(""),
   confidence: z.enum(["high", "medium", "low"]),
   checks: z.array(z.object({ name: z.string().max(200), status: z.enum(["passed", "failed", "skipped"]), evidence: z.array(z.string().max(1000)).max(10) })).max(50),
   failures: z.array(z.object({ category: z.enum(["build", "test", "runtime", "browser", "network", "configuration"]), message: z.string().max(2000), reproduction: z.string().max(2000).optional(), likelyFiles: z.array(z.string().max(500)).max(20).optional() })).max(20),
@@ -48,6 +51,7 @@ export type ValidationResult = z.infer<typeof validationSchema>;
 
 export const diagnosisSchema = z.object({
   summary: z.string().min(1).max(3000),
+  narration: z.string().max(5000).default(""),
   category: z.enum(["build", "test", "runtime", "browser", "network", "configuration", "unknown"]),
   confidence: z.enum(["high", "medium", "low"]),
   rootCause: z.string().min(1).max(3000),

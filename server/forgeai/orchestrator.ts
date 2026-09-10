@@ -54,10 +54,11 @@ async function recordTool(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>
   await event(db, run, "tool_completed", `${agent} completed ${tool}`, agent, { tool, output });
 }
 
-const brainPrompt = `You are Brain, the planning agent in ForgeAI. Inspect the supplied project facts and user request. Return only JSON matching the requested schema. Do not ask the user follow-up questions when reasonable defaults can be chosen: for a new web app, choose a simple modern stack and create a runnable minimal implementation. Do not claim to have edited files. Prefer small, verifiable changes. Never request or reproduce secrets.`;
-const code2Prompt = `You are Code2, the implementation agent in ForgeAI. Return only JSON matching the requested schema. Propose concrete file actions based on the plan. Use relative paths only. Do not invent successful execution; the backend will execute and record approved actions.`;
-const monitorPrompt = `You are MonitorCheck, the validation agent in ForgeAI. Return only JSON matching the requested schema. Base conclusions only on supplied workspace and command evidence. Mark unavailable checks as skipped or blocked; never invent errors.`;
-const bugPrompt = `You are Bug, the diagnosis agent in ForgeAI. Return only JSON matching the requested schema. Use only the supplied validation failure and workspace evidence. Give a minimal repair plan and be explicit when the issue is not safely repairable.`;
+const narrationRule = "Include a narration field containing one or two natural, well-written paragraphs for the user. Do not use numbered plans, repeated bullets, tables, raw JSON, terminal output, HTML, fragments, or artificial status phrases. Explain what you understood, what you found, what you are doing, and what happens next. Keep technical details in the structured fields, not the narration.";
+const brainPrompt = `You are Brain, the planning agent in ForgeAI. Inspect the supplied project facts and user request. Return one JSON object matching the requested schema. ${narrationRule} Do not ask the user follow-up questions when reasonable defaults can be chosen: for a new web app, choose a simple modern stack and create a runnable minimal implementation. Do not claim to have edited files. Prefer small, verifiable changes. Never request or reproduce secrets.`;
+const code2Prompt = `You are Code2, the implementation agent in ForgeAI. Return one JSON object matching the requested schema. ${narrationRule} Propose concrete file actions based on the plan. Use relative paths only. Do not invent successful execution; the backend will execute and record approved actions.`;
+const monitorPrompt = `You are MonitorCheck, the validation agent in ForgeAI. Return one JSON object matching the requested schema. ${narrationRule} Base conclusions only on supplied workspace and command evidence. Mark unavailable checks as skipped or blocked; never invent errors.`;
+const bugPrompt = `You are Bug, the diagnosis agent in ForgeAI. Return one JSON object matching the requested schema. ${narrationRule} Use only the supplied validation failure and workspace evidence. Give a minimal repair plan and be explicit when the issue is not safely repairable.`;
 
 export async function createDevelopmentRun(userId: ObjectId, project: ProjectDoc, request: string, maxAttempts: number) {
   const db = await getForgeDb();
@@ -121,7 +122,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
   const brain = await getForgeAgent().completeStructured([{ role: "system", content: brainPrompt }, { role: "user", content: JSON.stringify({ request: run.request, project: { name: project.name, description: project.description, files: project.files }, workspace: inspected, outputSchema: "summary, assumptions, acceptanceCriteria, steps, commands, validationPlan, needsUserInput, blockedReason" }) }], value => planSchema.parse(value));
   run.plan = brain;
   await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { plan: brain, updatedAt: new Date() } });
-  await event(db, run, "plan_created", brain.summary, "brain", { acceptanceCriteria: brain.acceptanceCriteria, steps: brain.steps });
+  await event(db, run, "plan_created", brain.narration || brain.summary, "brain", { acceptanceCriteria: brain.acceptanceCriteria, steps: brain.steps });
   await transition(db, run, "planned", "brain", "Brain created an implementation plan");
   if (brain.needsUserInput) { run.status = "blocked"; await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { status: "blocked", lastError: brain.blockedReason ?? "Additional user input is required", updatedAt: new Date() } }); return; }
 
@@ -138,13 +139,13 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
         await recordTool(db, run, "code2", "file.write", { path: action.path }, { path: action.path, bytes: Buffer.byteLength(action.content) });
       }
     }
-    await event(db, run, "agent_message", implementation.summary, "code2", { filesChanged: implementation.filesChanged });
+    await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged });
     await transition(db, run, "validating", "monitorcheck", "Code2 handed the workspace to MonitorCheck");
     const after = await inspectWorkspace(root);
     const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation, workspace: after, evidence: { workspaceInspection: after }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));
     run.validation = validation;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { validation, updatedAt: new Date() } });
-    await event(db, run, "validation_result", `MonitorCheck ${validation.status}`, "monitorcheck", safeJson(validation));
+    await event(db, run, "validation_result", validation.narration || `MonitorCheck ${validation.status}`, "monitorcheck", safeJson(validation));
     if (validation.status === "passed") {
       run.status = "completed"; run.currentAgent = "monitorcheck"; run.completedAt = new Date(); run.updatedAt = run.completedAt;
       await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { status: run.status, currentAgent: run.currentAgent, completedAt: run.completedAt, updatedAt: run.updatedAt } });
@@ -156,7 +157,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     const diagnosis = await getForgeAgent().completeStructured([{ role: "system", content: bugPrompt }, { role: "user", content: JSON.stringify({ request: run.request, validation, workspace: after, outputSchema: "summary, category, confidence, rootCause, files, repairSteps, repairable" }) }], value => diagnosisSchema.parse(value));
     run.diagnosis = diagnosis;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { diagnosis, updatedAt: new Date() } });
-    await event(db, run, "diagnosis", diagnosis.summary, "bug", safeJson(diagnosis));
+    await event(db, run, "diagnosis", diagnosis.narration || diagnosis.summary, "bug", safeJson(diagnosis));
     if (!diagnosis.repairable) break;
   }
   run.status = "failed"; run.lastError = "The development run reached its repair limit"; run.updatedAt = new Date();
