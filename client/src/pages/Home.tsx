@@ -464,20 +464,21 @@ export default function Home() {
             {activeSection === 'home' ? (
               <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 pb-16">
                 <div className="w-full max-w-3xl mx-auto">
-                  <WelcomeState onSelectPrompt={(p) => triggerAgentHandoff(p)} />
+                  <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                   <MessageComposer
                     onSendMessage={(text) => triggerAgentHandoff(text)}
                     disabled={!!activeAgentTyping}
                     activeAgent={activeAgentTyping}
                     onOpenImport={() => setImportModalOpen(true)}
                   />
+                  <WelcomeState variant="suggestions" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                 </div>
               </div>
             ) : (
               <>
                 <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3">
                   {currentProject.messages.length === 0 ? (
-                    <WelcomeState onSelectPrompt={(p) => triggerAgentHandoff(p)} />
+                    <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                   ) : (
                     currentProject.messages.map((msg) => (
                       <ChatMessageItem
@@ -498,6 +499,9 @@ export default function Home() {
                   activeAgent={activeAgentTyping}
                   onOpenImport={() => setImportModalOpen(true)}
                 />
+                {currentProject.messages.length === 0 && (
+                  <WelcomeState variant="suggestions" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
+                )}
               </>
             )}
           </div>
