@@ -234,6 +234,16 @@ export default function Home() {
     if (!authUser) { setAuthModalOpen(true); toast('Sign in to persist chats and use the ForgeAI agent'); return; }
     setActiveAgentTyping('planner');
     try {
+      const { intent } = await forgeaiApi.intent(userPrompt);
+      if (intent.intent === 'conversation') {
+        const result = await forgeaiApi.agentChat({ projectId: activeProjectId || null, message: userPrompt, provider: 'groq' });
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const userMsg: ChatMessage = { id: `user-${Date.now()}`, sender: 'user', text: userPrompt, timestamp };
+        const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, sender: 'assistant', text: result.response, timestamp };
+        if (activeProjectId) setProjects(prev => prev.map(project => project.id === activeProjectId ? { ...project, messages: [...project.messages, userMsg, assistantMsg], lastActive: 'Just now' } : project));
+        setActiveSection(activeProjectId ? 'projects' : 'home');
+        return;
+      }
       let projectId = activeProjectId || null;
       if (!projectId) {
         const created = await forgeaiApi.createProject({ name: userPrompt.slice(0, 48) || 'Untitled project', description: userPrompt });

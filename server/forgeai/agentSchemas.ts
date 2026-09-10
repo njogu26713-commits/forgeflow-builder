@@ -69,6 +69,12 @@ export const agentRunSchema = z.object({
   maxAttempts: z.number().int().min(1).max(5).default(3),
 });
 
+export const intentSchema = z.object({
+  intent: z.enum(["conversation", "development"]),
+  reason: z.string().max(500),
+});
+export type RequestIntent = z.infer<typeof intentSchema>;
+
 export const transitions: Record<RunStatus, RunStatus[]> = {
   queued: ["inspecting", "cancelled"],
   inspecting: ["planned", "blocked", "failed", "cancelled"],

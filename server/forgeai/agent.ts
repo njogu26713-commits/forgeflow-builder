@@ -1,4 +1,5 @@
 import { forgeConfig, hasGroq } from "./config";
+import { intentSchema, type RequestIntent } from "./agentSchemas";
 
 export type AgentMessage = {
   role: "system" | "user" | "assistant";
@@ -71,6 +72,24 @@ export function getForgeAgent(provider = "groq") {
   const selected = providers[provider];
   if (!selected) throw new Error(`Unsupported agent provider: ${provider}`);
   return selected;
+}
+
+const conversationalPattern = /^(hi|hello|hey|hola|thanks|thank you|good morning|good afternoon|good evening|who are you|what can you do|help|how are you)\b/i;
+const developmentPattern = /\b(build|create|make|develop|implement|add|remove|delete|change|update|modify|fix|debug|refactor|integrate|connect|deploy|convert|improve|optimi[sz]e|responsive|authentication|dashboard|saas|app|application|website|feature)\b/i;
+
+export async function classifyForgeIntent(message: string): Promise<RequestIntent> {
+  const text = message.trim();
+  if (conversationalPattern.test(text) && !developmentPattern.test(text)) return { intent: "conversation", reason: "Greeting or general conversation" };
+  if (developmentPattern.test(text)) return { intent: "development", reason: "Request contains a build, change, debugging, or deployment action" };
+  if (!hasGroq()) return { intent: "conversation", reason: "No development action was detected" };
+  try {
+    return await getForgeAgent().completeStructured([
+      { role: "system", content: "Classify the user request. Return JSON only with intent conversation or development and a short reason. Choose development only when the user asks to build, modify, debug, test, integrate, or deploy software. General questions, greetings, explanations, and capability questions are conversation." },
+      { role: "user", content: text },
+    ], value => intentSchema.parse(value));
+  } catch {
+    return { intent: "conversation", reason: "Unable to confirm a development request" };
+  }
 }
 
 export const forgeAgentSystemPrompt = `You are ForgeAI, an autonomous software development agent. Understand product requests, debugging tasks, authentication work, dashboards, and UI changes. Respond with a concise implementation plan and concrete next steps. Do not claim to have modified files or deployed anything unless a tool actually performed that operation. Never request, repeat, infer, or include passwords, API keys, tokens, or secret values.`;

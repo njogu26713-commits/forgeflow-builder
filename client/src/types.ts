@@ -18,7 +18,7 @@ export interface TechnicalDetail {
 
 export interface ChatMessage {
   id: string;
-  sender: 'user' | AgentRole;
+  sender: 'user' | 'assistant' | AgentRole;
   text: string;
   timestamp: string;
   technicalDetails?: TechnicalDetail;

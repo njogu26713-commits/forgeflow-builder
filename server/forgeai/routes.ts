@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { getForgeAgent, forgeAgentSystemPrompt } from "./agent";
+import { classifyForgeIntent, getForgeAgent, forgeAgentSystemPrompt } from "./agent";
 import { clearForgeSession, publicUser, requireForgeAuth, setForgeSession, signForgeSession, type ForgeRequest, optionalForgeAuth } from "./auth";
 import { forgeConfig, hasForgeAuth, hasForgeDatabase } from "./config";
 import { getForgeDb, toObjectId } from "./db";
@@ -276,6 +276,12 @@ export function registerForgeAiRoutes(app: Express) {
       console.error("[ForgeAI] Agent request failed");
       return res.status(502).json({ error: "The ForgeAI agent is temporarily unavailable" });
     }
+  });
+
+  privateApi.post("/agent/intent", agentRateLimit, async (req: ForgeRequest, res) => {
+    const parsed = z.object({ message: z.string().trim().min(1).max(12000) }).safeParse(req.body);
+    if (!parsed.success) return badRequest(res, "A message is required");
+    return res.json({ intent: await classifyForgeIntent(parsed.data.message) });
   });
 
   api.use(privateApi);

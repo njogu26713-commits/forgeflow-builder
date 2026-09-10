@@ -57,6 +57,7 @@ export const forgeaiApi = {
   createProject: (input: { name: string; description?: string }) => request<{ project: ForgeApiProject }>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   chats: () => request<{ chats: ForgeApiChat[] }>('/chats'),
   agentChat: (input: { chatId?: string; projectId?: string | null; message: string; provider?: string }) => request<{ chat: ForgeApiChat; response: string }>('/agent/chat', { method: 'POST', body: JSON.stringify(input) }),
+  intent: (message: string) => request<{ intent: { intent: 'conversation' | 'development'; reason: string } }>('/agent/intent', { method: 'POST', body: JSON.stringify({ message }) }),
   createRun: (projectId: string, input: { message: string; maxAttempts?: number }) => request<{ run: ForgeDevelopmentRun }>(`/projects/${projectId}/runs`, { method: 'POST', body: JSON.stringify(input) }),
   run: (runId: string) => request<{ run: ForgeDevelopmentRun }>(`/runs/${runId}`),
   runEvents: (runId: string, after = -1) => request<{ events: ForgeDevelopmentEvent[] }>(`/runs/${runId}/events?after=${after}`),

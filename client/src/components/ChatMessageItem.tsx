@@ -10,6 +10,7 @@ interface ChatMessageItemProps {
 
 export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageItemProps) {
   const isUser = message.sender === 'user';
+  const isSpecializedAgent = message.sender !== 'user' && message.sender !== 'assistant';
 
   return (
     <div className={isUser ? 'rounded-lg border border-[#292a32] bg-[#15161b] px-4 py-3' : 'px-1 py-1'}>
@@ -17,7 +18,7 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
       <AgentHeader role={message.sender} isStreaming={message.isStreaming} />
 
       {/* Main natural text content with pure whitespace hierarchy */}
-      <div className={`text-[13.5px] leading-relaxed ${isUser ? 'text-zinc-100 font-medium' : 'border-l-2 border-zinc-600 pl-3 text-zinc-400'}`}>
+      <div className={`text-[13.5px] leading-relaxed ${isUser ? 'text-zinc-100 font-medium' : isSpecializedAgent ? 'border-l-2 border-zinc-600 pl-3 text-zinc-400' : 'text-zinc-300'}`}>
         <p className="whitespace-pre-wrap max-w-3xl">{message.text}</p>
         {message.isStreaming && <span className="typewriter-cursor" />}
       </div>

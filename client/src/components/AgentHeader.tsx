@@ -11,7 +11,7 @@ import {
 import { AgentRole } from '../types';
 
 interface AgentHeaderProps {
-  role: AgentRole | 'user';
+  role: AgentRole | 'assistant' | 'user';
   isStreaming?: boolean;
 }
 
@@ -51,6 +51,8 @@ export function AgentHeader({ role, isStreaming }: AgentHeaderProps) {
       </div>
     );
   }
+
+  if (role === 'assistant') return null;
 
   const agent = AGENT_CONFIG[role];
   const Icon = agent.icon;
