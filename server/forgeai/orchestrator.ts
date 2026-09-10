@@ -84,6 +84,46 @@ async function syncWorkspaceToProject(db: NonNullable<Awaited<ReturnType<typeof 
   return files;
 }
 
+const nodeBuiltins = new Set(["assert", "buffer", "child_process", "crypto", "events", "fs", "http", "https", "module", "net", "os", "path", "process", "stream", "string_decoder", "timers", "tls", "url", "util", "zlib"]);
+const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"]);
+
+async function sourceFiles(root: string, current = root): Promise<string[]> {
+  const entries = await fs.readdir(current, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (["node_modules", ".git", "dist", "build"].includes(entry.name)) continue;
+    const absolute = path.join(current, entry.name);
+    if (entry.isDirectory()) files.push(...await sourceFiles(root, absolute));
+    else if (sourceExtensions.has(path.extname(entry.name))) files.push(absolute);
+  }
+  return files;
+}
+
+async function detectMissingDependencies(root: string) {
+  let packageJson: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> } = {};
+  try { packageJson = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8")) as typeof packageJson; } catch { return []; }
+  const installed = new Set([...Object.keys(packageJson.dependencies ?? {}), ...Object.keys(packageJson.devDependencies ?? {})]);
+  const imports = new Set<string>();
+  for (const file of await sourceFiles(root)) {
+    const text = await fs.readFile(file, "utf8");
+    const importPattern = /(?:from\s*["']|import\s*["']|require\(\s*["'])([^"']+)["']/g;
+    let match: RegExpExecArray | null;
+    while ((match = importPattern.exec(text)) !== null) {
+      const name = match[1];
+      if (!name || name.startsWith(".") || name.startsWith("/") || name.startsWith("node:") || nodeBuiltins.has(name)) continue;
+      imports.add(name.startsWith("@") ? name.split("/").slice(0, 2).join("/") : name.split("/")[0]);
+    }
+  }
+  return Array.from(imports).filter(name => !installed.has(name) && /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(name)).sort();
+}
+
+async function installMissingDependencies(root: string, packages: string[], onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
+  if (!packages.length) return null;
+  let manager = "npm";
+  try { await fs.access(path.join(root, "pnpm-lock.yaml")); manager = "pnpm"; } catch { try { await fs.access(path.join(root, "yarn.lock")); manager = "yarn"; } catch { try { await fs.access(path.join(root, "bun.lockb")); manager = "bun"; } catch { /* npm default */ } } }
+  return runControlledCommand(root, `${manager} install ${packages.join(" ")}`, onOutput);
+}
+
 const allowedExecutables = new Set(["pnpm", "npm", "yarn", "bun", "node", "npx", "python3", "git"]);
 function tokenizeCommand(command: string) {
   const parts: string[] = [];
@@ -238,6 +278,18 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
       });
       if (result.tool === "command.run") commandResults.push(result.output);
       await recordTool(db, run, "code2", result.tool, { type: action.type, path: action.path, command: action.command }, result.output);
+    }
+    const missingDependencies = await detectMissingDependencies(root);
+    if (missingDependencies.length) {
+      const installCommand = `npm install ${missingDependencies.join(" ")}`;
+      await event(db, run, "tool_started", `Code2 detected missing dependencies: ${missingDependencies.join(", ")}`, "code2", { command: installCommand, packages: missingDependencies });
+      const installResult = await installMissingDependencies(root, missingDependencies, async (type, content) => {
+        await event(db, run, "tool_output", content, "code2", { type, command: installCommand, automatic: true });
+      });
+      if (installResult) {
+        commandResults.push(installResult);
+        await recordTool(db, run, "code2", "dependencies.install", { packages: missingDependencies }, installResult);
+      }
     }
     const persistedFiles = await syncWorkspaceToProject(db, run, root);
     await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks, persistedFiles });
