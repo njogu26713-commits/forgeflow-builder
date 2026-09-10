@@ -38,6 +38,7 @@ import { ImportModal } from '../components/ImportModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { toast } from 'sonner';
 import { Link, useLocation } from 'wouter';
+import JSZip from 'jszip';
 
 type WorkspaceSection = 'home' | 'projects' | 'source' | 'secrets' | 'settings';
 
@@ -228,6 +229,32 @@ export default function Home() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create project');
     }
+  };
+
+  const handleUploadFiles = async (fileList: FileList, sourceName: string) => {
+    if (!authUser) { setAuthModalOpen(true); return; }
+    let projectId = activeProjectId;
+    if (!projectId) {
+      const created = await forgeaiApi.createProject({ name: sourceName.replace(/\.zip$/i, '') || 'Imported project', description: `Imported from ${sourceName}` });
+      const next = toProjectData(created.project); setProjects(prev => [next, ...prev]); setActiveProjectId(next.id); projectId = next.id;
+    }
+    const imported: ProjectFile[] = [];
+    if (fileList[0]?.name.toLowerCase().endsWith('.zip')) {
+      const archive = await JSZip.loadAsync(await fileList[0].arrayBuffer());
+      for (const [name, entry] of Object.entries(archive.files)) {
+        if (entry.dir || name.includes('__MACOSX')) continue;
+        imported.push({ id: name, path: name, name: name.split('/').pop() ?? name, type: 'file', content: await entry.async('string'), language: name.split('.').pop() });
+      }
+    } else {
+      for (const file of Array.from(fileList)) {
+        const relative = file.webkitRelativePath || file.name;
+        imported.push({ id: relative, path: relative, name: relative.split('/').pop() ?? relative, type: 'file', content: await file.text(), language: relative.split('.').pop() });
+      }
+    }
+    const result = await forgeaiApi.updateProject(projectId, { files: imported });
+    setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: result.project.files as ProjectFile[], lastActive: 'Just now' } : project));
+    setActiveSection('projects'); setWorkspaceMode('split-workspace');
+    toast.success(`${imported.length} files imported into the project`);
   };
 
   const triggerAgentHandoff = async (userPrompt: string) => {
@@ -689,9 +716,7 @@ export default function Home() {
         onImportRepo={(url) => {
           toast.success(`Imported ${url}. Codebase inspected.`);
         }}
-        onUploadZip={(name) => {
-          toast.success(`Uploaded ${name}. Project files mounted.`);
-        }}
+        onUploadFiles={handleUploadFiles}
       />
 
       <SettingsModal
