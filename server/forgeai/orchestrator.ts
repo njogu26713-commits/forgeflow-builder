@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { ObjectId } from "mongodb";
 import { getForgeAgent } from "./agent";
 import { canTransition, diagnosisSchema, implementationSchema, planSchema, runStatusSchema, validationSchema, type AgentName, type AgentPlan, type RunStatus } from "./agentSchemas";
@@ -10,7 +9,6 @@ import type { ProjectDoc } from "./types";
 import type { DevelopmentEventDoc, DevelopmentRunDoc, ToolCallDoc } from "./runTypes";
 
 const workspaceRoot = path.resolve(process.env.FORGEAI_WORKSPACE_ROOT ?? "/tmp/forgeflow-workspaces");
-const execFileAsync = promisify(execFile);
 const safeJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 
 function publicRun(run: DevelopmentRunDoc) {
@@ -87,21 +85,36 @@ async function syncWorkspaceToProject(db: NonNullable<Awaited<ReturnType<typeof 
 }
 
 const allowedExecutables = new Set(["pnpm", "npm", "yarn", "bun", "node", "npx", "python3", "git"]);
-async function runControlledCommand(root: string, command: string) {
-  const parts = command.trim().split(/\s+/);
-  const executable = parts.shift() ?? "";
-  if (!allowedExecutables.has(executable)) throw new Error(`Command is not allowed: ${executable}`);
-  if (parts.some(part => ["rm", "sudo", "chmod", "chown", "curl", "wget"].includes(part))) throw new Error("Command contains a restricted operation");
-  try {
-    const result = await execFileAsync(executable, parts, { cwd: root, timeout: 120_000, maxBuffer: 1_000_000, env: { ...process.env, NODE_ENV: "development" } });
-    return { command, stdout: result.stdout.slice(-20000), stderr: result.stderr.slice(-20000), exitCode: 0 };
-  } catch (error) {
-    const failure = error as { stdout?: string; stderr?: string; code?: number };
-    return { command, stdout: (failure.stdout ?? "").slice(-20000), stderr: (failure.stderr ?? "").slice(-20000), exitCode: typeof failure.code === "number" ? failure.code : 1 };
-  }
+function tokenizeCommand(command: string) {
+  const parts: string[] = [];
+  const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(command)) !== null) parts.push(match[1] ?? match[2] ?? match[3]);
+  return parts;
 }
 
-async function applyCode2Action(root: string, action: { type: string; path?: string; content?: string; command?: string }) {
+async function runControlledCommand(root: string, command: string, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
+  const parts = tokenizeCommand(command);
+  const executable = parts.shift() ?? "";
+  if (!allowedExecutables.has(executable)) throw new Error(`Command is not allowed: ${executable}`);
+  if (/[|;&><`$]/.test(command) || parts.some(part => ["rm", "sudo", "chmod", "chown", "curl", "wget"].includes(part))) throw new Error("Command contains a restricted shell operation");
+  return new Promise<{ command: string; stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+    const child = spawn(executable, parts, { cwd: root, env: { ...process.env, NODE_ENV: "development" }, shell: false });
+    let stdout = ""; let stderr = ""; let settled = false;
+    const append = (target: "stdout" | "stderr", chunk: Buffer) => {
+      const text = chunk.toString();
+      if (target === "stdout") stdout = `${stdout}${text}`.slice(-20000); else stderr = `${stderr}${text}`.slice(-20000);
+      void onOutput?.(target, text.slice(-4000));
+    };
+    child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
+    child.stderr.on("data", (chunk: Buffer) => append("stderr", chunk));
+    const timeout = setTimeout(() => { child.kill("SIGTERM"); if (!settled) { settled = true; resolve({ command, stdout, stderr: `${stderr}\nCommand timed out after 120 seconds`, exitCode: 124 }); } }, 120_000);
+    child.on("error", error => { clearTimeout(timeout); if (!settled) { settled = true; reject(error); } });
+    child.on("close", code => { clearTimeout(timeout); if (!settled) { settled = true; resolve({ command, stdout, stderr, exitCode: code ?? 1 }); } });
+  });
+}
+
+async function applyCode2Action(root: string, action: { type: string; path?: string; content?: string; command?: string }, onOutput?: (type: "stdout" | "stderr", content: string) => Promise<void>) {
   if (action.type === "write" && action.path && action.content !== undefined) {
     const target = safePath(root, action.path); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, action.content, "utf8");
     return { tool: "file.write", output: { path: action.path, bytes: Buffer.byteLength(action.content) } };
@@ -114,7 +127,7 @@ async function applyCode2Action(root: string, action: { type: string; path?: str
   }
   if (action.type === "rename" && action.path && action.command) { await fs.rename(safePath(root, action.path), safePath(root, action.command)); return { tool: "file.rename", output: { from: action.path, to: action.command } };
   }
-  if (action.type === "command" && action.command) return { tool: "command.run", output: await runControlledCommand(root, action.command) };
+  if (action.type === "command" && action.command) return { tool: "command.run", output: await runControlledCommand(root, action.command, onOutput) };
   if (action.type === "inspect" && action.path) { const content = await fs.readFile(safePath(root, action.path), "utf8"); return { tool: "file.read", output: { path: action.path, content: content.slice(0, 20000) } };
   }
   throw new Error("Code2 returned an incomplete or unsupported action");
@@ -212,20 +225,25 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
   await transition(db, run, "planned", "brain", "Brain created an implementation plan");
   if (brain.needsUserInput) { run.status = "blocked"; await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { status: "blocked", lastError: brain.blockedReason ?? "Additional user input is required", updatedAt: new Date() } }); return; }
 
+  const commandResults: unknown[] = [];
   while (run.attempt < run.maxAttempts) {
     run.attempt += 1;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { attempt: run.attempt, updatedAt: new Date() } });
     await transition(db, run, run.attempt === 1 ? "implementing" : "repairing", run.attempt === 1 ? "code2" : "bug", `${run.attempt === 1 ? "Code2 is implementing" : "Code2 is applying a repair"} attempt ${run.attempt}`);
-    const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
+    const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, commandResults, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
     for (const action of implementation.actions) {
-      const result = await applyCode2Action(root, action);
+      if (action.type === "command" && action.command) await event(db, run, "tool_started", `Code2 is running ${action.command}`, "code2", { command: action.command });
+      const result = await applyCode2Action(root, action, async (type, content) => {
+        await event(db, run, "tool_output", content, "code2", { type, command: action.command });
+      });
+      if (result.tool === "command.run") commandResults.push(result.output);
       await recordTool(db, run, "code2", result.tool, { type: action.type, path: action.path, command: action.command }, result.output);
     }
     const persistedFiles = await syncWorkspaceToProject(db, run, root);
     await event(db, run, "agent_message", implementation.narration || implementation.summary, "code2", { filesChanged: implementation.filesChanged, blocks: implementation.blocks, persistedFiles });
     await transition(db, run, "validating", "monitorcheck", "Code2 handed the workspace to MonitorCheck");
     const after = await inspectWorkspace(root);
-    const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation, workspace: after, evidence: { workspaceInspection: after }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));
+    const validation = await getForgeAgent().completeStructured([{ role: "system", content: monitorPrompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, implementation, commandResults, workspace: after, evidence: { workspaceInspection: after, commandResults }, outputSchema: "status, confidence, checks, failures, recommendations" }) }], value => validationSchema.parse(value));
     run.validation = validation;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { validation, updatedAt: new Date() } });
     await event(db, run, "validation_result", validation.narration || `MonitorCheck ${validation.status}`, "monitorcheck", safeJson(validation));

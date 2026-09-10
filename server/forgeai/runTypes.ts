@@ -26,7 +26,7 @@ export type DevelopmentEventDoc = {
   userId: ObjectId;
   projectId: ObjectId;
   sequence: number;
-  kind: "run_created" | "agent_started" | "agent_message" | "plan_created" | "tool_completed" | "validation_result" | "diagnosis" | "handoff" | "status_changed" | "run_completed" | "run_failed";
+  kind: "run_created" | "agent_started" | "agent_message" | "plan_created" | "tool_started" | "tool_output" | "tool_completed" | "validation_result" | "diagnosis" | "handoff" | "status_changed" | "run_completed" | "run_failed";
   agent?: AgentName | null;
   message?: string;
   payload?: Record<string, unknown>;

@@ -268,6 +268,12 @@ export default function Home() {
         const [{ run }, { events }] = await Promise.all([forgeaiApi.run(runResult.run.id), forgeaiApi.runEvents(runResult.run.id, sequence)]);
         if (events.length) {
           sequence = events[events.length - 1].sequence;
+          const terminalEntries: TerminalEntry[] = events.flatMap<TerminalEntry>(event => {
+            if (event.kind === 'tool_started') return [{ id: `terminal-${runResult.run.id}-${event.sequence}`, type: 'cmd' as const, content: String(event.payload?.command ?? event.message ?? ''), timestamp: new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }];
+            if (event.kind === 'tool_output') return [{ id: `terminal-${runResult.run.id}-${event.sequence}`, type: event.payload?.type === 'stderr' ? 'stderr' as const : 'stdout' as const, content: event.message ?? '', timestamp: new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }];
+            if (event.kind === 'tool_completed' && event.payload?.tool === 'command.run') { const output = event.payload.output as { stdout?: string; stderr?: string; exitCode?: number } | undefined; return [{ id: `terminal-${runResult.run.id}-${event.sequence}`, type: output?.exitCode ? 'stderr' as const : 'system' as const, content: output?.exitCode ? `Command exited with code ${output.exitCode}` : 'Command completed successfully', timestamp: new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]; }
+            return [];
+          });
           const messages = events.filter(event => event.message && ['agent_message', 'plan_created', 'validation_result', 'diagnosis', 'run_completed', 'run_failed'].includes(event.kind)).map(event => ({
             id: `run-${runResult.run.id}-${event.sequence}`,
             sender: agentRole(event.agent),
@@ -276,7 +282,7 @@ export default function Home() {
             blocks: Array.isArray(event.payload?.blocks) ? event.payload.blocks as ChatMessage['blocks'] : undefined,
             technicalDetails: event.payload ? { errors: Array.isArray(event.payload.failures) ? event.payload.failures.map(String) : undefined, handoffTo: event.agent ?? undefined } : undefined,
           } satisfies ChatMessage));
-          if (messages.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages] } : project));
+          if (messages.length || terminalEntries.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages], terminal: [...project.terminal, ...terminalEntries] } : project));
           try {
             const refreshed = await forgeaiApi.project(projectId);
             setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: refreshed.project.files as ProjectFile[], lastActive: new Date(refreshed.project.updatedAt).toLocaleDateString(), previewUrl: `/api/projects/${projectId}/preview`, previewState: run.status === 'completed' ? 'ready' : 'building' } : project));
