@@ -36,7 +36,7 @@ import { TerminalView } from '../components/TerminalView';
 import { ImportModal } from '../components/ImportModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { toast } from 'sonner';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 
 type WorkspaceSection = 'home' | 'projects' | 'source' | 'secrets' | 'settings';
 
@@ -117,6 +117,7 @@ function SectionLanding({ section, onAction }: { section: Exclude<WorkspaceSecti
 }
 
 export default function Home() {
+  const [, navigate] = useLocation();
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string>('');
   const [authUser, setAuthUser] = useState<ForgeUser | null>(null);
@@ -184,7 +185,10 @@ export default function Home() {
       try {
         const me = await forgeaiApi.me();
         setAuthUser(me.user);
-        if (!me.user) return;
+        if (!me.user) {
+          navigate('/');
+          return;
+        }
         const [{ projects: remoteProjects }, { chats }] = await Promise.all([forgeaiApi.projects(), forgeaiApi.chats()]);
         const mapped = remoteProjects.map(toProjectData);
         for (const project of mapped) {
@@ -199,10 +203,10 @@ export default function Home() {
         setProjects(mapped);
         if (mapped[0]) setActiveProjectId(mapped[0].id);
       } catch {
-        toast.error('ForgeAI backend is not configured yet');
+        navigate('/');
       }
     })();
-  }, []);
+  }, [navigate]);
 
   const handleNewProject = async () => {
     if (!authUser) { setAuthModalOpen(true); return; }
