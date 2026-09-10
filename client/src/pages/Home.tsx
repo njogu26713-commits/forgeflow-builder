@@ -12,7 +12,8 @@ import {
   Plus, 
   Sparkles,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { 
   ProjectData, 
@@ -136,9 +137,15 @@ export default function Home() {
 
   // Mobile view mode: 'chat' | 'editor' | 'preview' | 'terminal'
   const [mobileView, setMobileView] = useState<'chat' | 'editor' | 'preview' | 'terminal'>('chat');
+  const [mobilePanelExpanded, setMobilePanelExpanded] = useState(true);
 
   // Active workspace right panel tab: 'editor' | 'preview' | 'terminal'
   const [workspaceTab, setWorkspaceTab] = useState<'editor' | 'preview' | 'terminal'>('preview');
+
+  const setMobileWorkspaceView = (view: 'chat' | 'editor' | 'preview' | 'terminal') => {
+    setMobileView(view);
+    setMobilePanelExpanded(true);
+  };
 
   // Streaming / Typing simulation state
   const [activeAgentTyping, setActiveAgentTyping] = useState<AgentRole | null>(null);
@@ -398,7 +405,7 @@ export default function Home() {
           {/* Mobile View Switcher (21. Responsive Design) */}
           <div className="flex lg:hidden items-center gap-1 text-[11px]">
             <button
-              onClick={() => setMobileView('chat')}
+              onClick={() => setMobileWorkspaceView('chat')}
               className={`px-2 py-1 rounded transition-colors ${
                 mobileView === 'chat' ? 'text-white bg-[#1a1b22]' : 'text-zinc-400'
               }`}
@@ -406,7 +413,7 @@ export default function Home() {
               Chat
             </button>
             <button
-              onClick={() => setMobileView('preview')}
+              onClick={() => setMobileWorkspaceView('preview')}
               className={`px-2 py-1 rounded transition-colors ${
                 mobileView === 'preview' ? 'text-white bg-[#1a1b22]' : 'text-zinc-400'
               }`}
@@ -414,7 +421,7 @@ export default function Home() {
               Preview
             </button>
             <button
-              onClick={() => setMobileView('editor')}
+              onClick={() => setMobileWorkspaceView('editor')}
               className={`px-2 py-1 rounded transition-colors ${
                 mobileView === 'editor' ? 'text-white bg-[#1a1b22]' : 'text-zinc-400'
               }`}
@@ -422,7 +429,7 @@ export default function Home() {
               Code
             </button>
             <button
-              onClick={() => setMobileView('terminal')}
+              onClick={() => setMobileWorkspaceView('terminal')}
               className={`px-2 py-1 rounded transition-colors ${
                 mobileView === 'terminal' ? 'text-white bg-[#1a1b22]' : 'text-zinc-400'
               }`}
@@ -588,6 +595,19 @@ export default function Home() {
           {/* Mobile dedicated views when tab is toggled */}
           {mobileView !== 'chat' && (
             <div className="flex lg:hidden flex-1 flex-col h-full overflow-hidden rounded-xl border border-[#292a32] bg-[#0f1014]">
+              <button
+                onClick={() => setMobilePanelExpanded((expanded) => !expanded)}
+                className="flex items-center justify-between border-b border-[#292a32] bg-[#111216] px-4 py-3 text-left text-xs text-zinc-300"
+                aria-expanded={mobilePanelExpanded}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
+                  {mobileView === 'editor' ? 'Code editor' : mobileView === 'preview' ? 'Live preview' : 'Terminal'}
+                </span>
+                {mobilePanelExpanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
+              </button>
+              {mobilePanelExpanded && (
+                <>
               {mobileView === 'editor' && (
                 <div className="flex flex-col h-full">
                   <div className="h-32 border-b border-[#1d1e24] overflow-y-auto">
@@ -626,6 +646,8 @@ export default function Home() {
                     );
                   }}
                 />
+              )}
+                </>
               )}
             </div>
           )}
