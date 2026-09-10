@@ -2,7 +2,7 @@ export const forgeConfig = {
   mongoUri: process.env.MONGODB_URI ?? "",
   mongoDbName: process.env.MONGODB_DB_NAME ?? "forgeai",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
-  groqModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.2-90b-vision-preview",
   jwtSecret: process.env.JWT_SECRET ?? "",
   secretEncryptionKey: process.env.SECRET_ENCRYPTION_KEY ?? "",
   clientOrigin: process.env.CLIENT_ORIGIN ?? "",
