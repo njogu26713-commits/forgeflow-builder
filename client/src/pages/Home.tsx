@@ -47,10 +47,39 @@ const EMPTY_PROJECT: ProjectData = {
   files: [], messages: [], terminal: [], previewUrl: '', previewState: 'stopped'
 };
 
+function normalizeFileTree(input: unknown[]): ProjectFile[] {
+  const roots: ProjectFile[] = [];
+  const folders = new Map<string, ProjectFile>();
+  const ensureFolder = (parts: string[], parent: ProjectFile[] = roots, prefix = ''): ProjectFile => {
+    const name = parts[0];
+    const path = prefix ? `${prefix}/${name}` : name;
+    let folder = folders.get(path);
+    if (!folder) { folder = { id: path, path, name, type: 'folder', children: [] }; folders.set(path, folder); parent.push(folder); }
+    if (parts.length > 1) return ensureFolder(parts.slice(1), folder.children, path);
+    return folder;
+  };
+  const flatFiles: Array<Partial<ProjectFile> & { path?: string }> = [];
+  const collect = (items: unknown[]) => items.forEach(raw => {
+    const file = raw as Partial<ProjectFile> & { path?: string; children?: unknown[] };
+    if (file.type === 'folder' && Array.isArray(file.children)) collect(file.children);
+    else if (file.type === 'file' && file.path) flatFiles.push(file);
+  });
+  collect(input);
+  for (const file of flatFiles) {
+    const parts = file.path!.split('/').filter(Boolean);
+    const filename = parts.pop();
+    if (!filename) continue;
+    const parent = parts.length ? ensureFolder(parts) : null;
+    const target = { ...file, id: file.id ?? file.path, name: filename, type: 'file' as const, path: file.path } as ProjectFile;
+    (parent?.children ?? roots).push(target);
+  }
+  return roots;
+}
+
 function toProjectData(project: { id: string; name: string; description: string; files: unknown[]; updatedAt: string }): ProjectData {
   return {
     id: project.id, name: project.name, description: project.description, activeBranch: 'main',
-    lastActive: new Date(project.updatedAt).toLocaleDateString(), files: project.files as ProjectFile[],
+    lastActive: new Date(project.updatedAt).toLocaleDateString(), files: normalizeFileTree(project.files),
     messages: [], terminal: [], previewUrl: `/api/projects/${project.id}/preview`, previewState: 'stopped'
   };
 }
@@ -251,8 +280,9 @@ export default function Home() {
         imported.push({ id: relative, path: relative, name: relative.split('/').pop() ?? relative, type: 'file', content: await file.text(), language: relative.split('.').pop() });
       }
     }
-    const result = await forgeaiApi.updateProject(projectId, { files: imported });
-    setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: result.project.files as ProjectFile[], lastActive: 'Just now' } : project));
+    const tree = normalizeFileTree(imported);
+    const result = await forgeaiApi.updateProject(projectId, { files: tree });
+    setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: normalizeFileTree(result.project.files), lastActive: 'Just now' } : project));
     setActiveSection('projects'); setWorkspaceMode('split-workspace');
     toast.success(`${imported.length} files imported into the project`);
   };
@@ -312,7 +342,7 @@ export default function Home() {
           if (messages.length || terminalEntries.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages], terminal: [...project.terminal, ...terminalEntries] } : project));
           try {
             const refreshed = await forgeaiApi.project(projectId);
-            setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: refreshed.project.files as ProjectFile[], lastActive: new Date(refreshed.project.updatedAt).toLocaleDateString(), previewUrl: `/api/projects/${projectId}/preview`, previewState: run.status === 'completed' ? 'ready' : 'building' } : project));
+            setProjects(prev => prev.map(project => project.id === projectId ? { ...project, files: normalizeFileTree(refreshed.project.files), lastActive: new Date(refreshed.project.updatedAt).toLocaleDateString(), previewUrl: `/api/projects/${projectId}/preview`, previewState: run.status === 'completed' ? 'ready' : 'building' } : project));
           } catch { /* event delivery remains useful if refresh briefly races the server write */ }
         }
         setActiveAgentTyping(run.currentAgent ? agentRole(run.currentAgent) : 'planner');
@@ -356,6 +386,16 @@ export default function Home() {
     if (activeFile?.id === fileId) {
       setActiveFile(nextTabs.length > 0 ? nextTabs[nextTabs.length - 1] : null);
     }
+  };
+
+  const handleUpdateContent = (fileId: string, newContent: string) => {
+    setProjects(prev => prev.map(project => {
+      if (project.id !== activeProjectId) return project;
+      const update = (files: ProjectFile[]): ProjectFile[] => files.map(file => file.type === 'folder' ? { ...file, children: update(file.children ?? []) } : file.id === fileId ? { ...file, content: newContent, isModifiedRecently: true } : file);
+      const files = update(project.files);
+      void forgeaiApi.updateProject(project.id, { files }).catch(() => toast.error('Unable to save editor changes'));
+      return { ...project, files };
+    }));
   };
 
   // Terminal command executor
@@ -620,6 +660,7 @@ export default function Home() {
                       openTabs={openTabs}
                       onSelectTab={(tab) => setActiveFile(tab)}
                       onCloseTab={handleCloseTab}
+                      onUpdateContent={handleUpdateContent}
                     />
                   )}
 
@@ -678,6 +719,7 @@ export default function Home() {
                       openTabs={openTabs}
                       onSelectTab={(tab) => setActiveFile(tab)}
                       onCloseTab={handleCloseTab}
+                      onUpdateContent={handleUpdateContent}
                     />
                   </div>
                 </div>
