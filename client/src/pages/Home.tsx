@@ -541,22 +541,22 @@ export default function Home() {
           } ${(activeSection !== 'home' && activeSection !== 'projects') ? 'hidden' : mobileView !== 'chat' ? 'hidden lg:flex' : 'flex'}`}>
             {/* Scrollable Conversation Stream */}
             {activeSection === 'home' ? (
-              <div className="flex-1 flex min-h-0 flex-col items-center justify-center overflow-y-auto px-4 sm:px-6 py-8">
+              <div className={`flex-1 flex min-h-0 flex-col overflow-y-auto px-4 sm:px-6 py-8 ${currentProject.files.length ? 'justify-end' : 'items-center justify-center'}`}>
                 <div className="w-full max-w-3xl mx-auto flex flex-col items-center">
-                  <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
+                  {!currentProject.files.length && <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />}
                   <MessageComposer
                     onSendMessage={(text) => triggerAgentHandoff(text)}
                     disabled={!!activeAgentTyping}
                     activeAgent={activeAgentTyping}
                     onOpenImport={() => setImportModalOpen(true)}
                   />
-                  <WelcomeState variant="suggestions" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
+                  {!currentProject.files.length && <WelcomeState variant="suggestions" onSelectPrompt={(p) => triggerAgentHandoff(p)} />}
                 </div>
               </div>
             ) : (
               <>
                 <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3">
-                  {currentProject.messages.length === 0 ? (
+                  {currentProject.messages.length === 0 && !currentProject.files.length ? (
                     <WelcomeState variant="intro" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                   ) : (
                     currentProject.messages.map((msg) => (
@@ -578,7 +578,7 @@ export default function Home() {
                   activeAgent={activeAgentTyping}
                   onOpenImport={() => setImportModalOpen(true)}
                 />
-                {currentProject.messages.length === 0 && (
+                {currentProject.messages.length === 0 && !currentProject.files.length && (
                   <WelcomeState variant="suggestions" onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                 )}
               </>
