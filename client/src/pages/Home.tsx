@@ -538,7 +538,7 @@ export default function Home() {
             workspaceMode === 'split-workspace' 
               ? 'w-full lg:w-[48%]' 
               : 'w-full max-w-4xl mx-auto'
-          } ${mobileView !== 'chat' || (activeSection !== 'home' && activeSection !== 'projects') ? 'hidden' : 'flex'}`}>
+          } ${(activeSection !== 'home' && activeSection !== 'projects') ? 'hidden' : mobileView !== 'chat' ? 'hidden lg:flex' : 'flex'}`}>
             {/* Scrollable Conversation Stream */}
             {activeSection === 'home' ? (
               <div className="flex-1 flex min-h-0 flex-col items-center justify-center overflow-y-auto px-4 sm:px-6 py-8">
