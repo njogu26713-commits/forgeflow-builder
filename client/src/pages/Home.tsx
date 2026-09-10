@@ -416,11 +416,11 @@ export default function Home() {
         </header>
 
         {/* Continuous Body: Conversation + Coding Workspace */}
-        <div className="flex-1 flex min-h-[calc(100vh-2.75rem)] items-start relative">
+        <div className="flex-1 flex min-h-[calc(100vh-2.75rem)] items-start relative gap-3 bg-[#090a0d] p-3 md:p-4">
           {/* Main Chat / Conversation: Visible on desktop always, or when mobileView === 'chat' */}
-          <div className={`flex flex-col min-h-[calc(100vh-2.75rem)] transition-all duration-150 ${
+          <div className={`flex flex-col min-h-[calc(100vh-3.5rem)] overflow-hidden rounded-xl border border-[#292a32] bg-[#111216] shadow-xl shadow-black/10 transition-all duration-150 ${
             workspaceMode === 'split-workspace' 
-              ? 'w-full lg:w-[48%] border-r border-[#1d1e24]' 
+              ? 'w-full lg:w-[48%]' 
               : 'w-full max-w-4xl mx-auto'
           } ${mobileView !== 'chat' || (activeSection !== 'home' && activeSection !== 'projects') ? 'hidden' : 'flex'}`}>
             {/* Scrollable Conversation Stream */}
@@ -438,7 +438,7 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-2">
+                <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3">
                   {currentProject.messages.length === 0 ? (
                     <WelcomeState onSelectPrompt={(p) => triggerAgentHandoff(p)} />
                   ) : (
@@ -480,7 +480,7 @@ export default function Home() {
           {/* 11. Code Workspace Panel: Files | Editor | Preview | Terminal */}
           {/* Desktop split view */}
           {workspaceMode === 'split-workspace' && activeSection === 'projects' && (
-            <div className="hidden lg:flex flex-1 flex-col min-h-[calc(100vh-2.75rem)] bg-[#0a0b0e] overflow-hidden">
+            <div className="hidden lg:flex flex-1 flex-col min-h-[calc(100vh-3.5rem)] overflow-hidden rounded-xl border border-[#292a32] bg-[#0f1014] shadow-xl shadow-black/10">
               {/* Workspace Navigation Bar: Files | Editor | Preview | Terminal */}
               <div className="h-9 border-b border-[#1d1e24] bg-[#0c0d10] px-3 flex items-center justify-between text-xs text-zinc-400">
                 <div className="flex items-center gap-4 font-medium">
@@ -524,7 +524,7 @@ export default function Home() {
               {/* Workspace Split Body */}
               <div className="flex-1 flex min-h-0">
                 {/* 12. File Explorer Sub-column */}
-                <div className="w-48 border-r border-[#1d1e24] bg-[#0c0d10] flex-shrink-0">
+                <div className="w-48 border-r border-[#292a32] bg-[#0c0d10] flex-shrink-0">
                   <FileExplorer
                     files={currentProject.files}
                     activeFile={activeFile}
@@ -570,7 +570,7 @@ export default function Home() {
 
           {/* Mobile dedicated views when tab is toggled */}
           {mobileView !== 'chat' && (
-            <div className="flex lg:hidden flex-1 flex-col h-full bg-[#0a0b0e] overflow-hidden">
+            <div className="flex lg:hidden flex-1 flex-col h-full overflow-hidden rounded-xl border border-[#292a32] bg-[#0f1014]">
               {mobileView === 'editor' && (
                 <div className="flex flex-col h-full">
                   <div className="h-32 border-b border-[#1d1e24] overflow-y-auto">

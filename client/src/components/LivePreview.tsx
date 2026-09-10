@@ -31,7 +31,7 @@ export function LivePreview({ url, projectId, state }: LivePreviewProps) {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#0b0c0f]">
+    <div className="h-full flex flex-col rounded-lg border border-[#292a32] bg-[#0b0c0f] overflow-hidden">
       {/* Top Preview Bar */}
       <div className="px-3 py-1.5 border-b border-[#1d1e24] bg-[#0d0e12] flex items-center justify-between text-xs font-mono">
         <div className="flex items-center gap-2 flex-1 max-w-sm">

@@ -54,7 +54,7 @@ export function CodeEditor({
   const lines = localContent.split('\n');
 
   return (
-    <div className="h-full flex flex-col bg-[#0f1014] text-xs font-mono">
+    <div className="h-full flex flex-col rounded-lg border border-[#292a32] bg-[#0f1014] text-xs font-mono overflow-hidden">
       {/* Editor Tabs */}
       <div className="flex items-center justify-between border-b border-[#1d1e24] bg-[#0c0d10] px-1 overflow-x-auto">
         <div className="flex items-center">

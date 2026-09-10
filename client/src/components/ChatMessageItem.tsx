@@ -12,7 +12,7 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
   const isUser = message.sender === 'user';
 
   return (
-    <div className={`py-3 transition-opacity ${isUser ? 'mt-4 pt-4 border-t border-[#18191f]' : ''}`}>
+    <div className={`rounded-lg border border-[#292a32] bg-[#15161b] px-4 py-3 transition-colors hover:border-[#383a45] ${isUser ? 'border-l-2 border-l-zinc-500' : ''}`}>
       {/* Agent or User Identification */}
       <AgentHeader role={message.sender} isStreaming={message.isStreaming} />
 
@@ -22,7 +22,7 @@ export function ChatMessageItem({ message, onActionButtonClick }: ChatMessageIte
         {message.isStreaming && <span className="typewriter-cursor" />}
       </div>
 
-      {/* Technical Details: minimal, collapsed by default, no card */}
+      {/* Technical Details: minimal, collapsed by default, nested only when useful */}
       {message.technicalDetails && (
         <TechnicalDetails details={message.technicalDetails} />
       )}
