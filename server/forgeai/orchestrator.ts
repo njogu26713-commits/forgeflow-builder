@@ -54,7 +54,7 @@ async function recordTool(db: NonNullable<Awaited<ReturnType<typeof getForgeDb>>
   await event(db, run, "tool_completed", `${agent} completed ${tool}`, agent, { tool, output });
 }
 
-const brainPrompt = `You are Brain, the planning agent in ForgeAI. Inspect the supplied project facts and user request. Return only JSON matching the requested schema. Do not claim to have edited files. Prefer small, verifiable changes. Never request or reproduce secrets.`;
+const brainPrompt = `You are Brain, the planning agent in ForgeAI. Inspect the supplied project facts and user request. Return only JSON matching the requested schema. Do not ask the user follow-up questions when reasonable defaults can be chosen: for a new web app, choose a simple modern stack and create a runnable minimal implementation. Do not claim to have edited files. Prefer small, verifiable changes. Never request or reproduce secrets.`;
 const code2Prompt = `You are Code2, the implementation agent in ForgeAI. Return only JSON matching the requested schema. Propose concrete file actions based on the plan. Use relative paths only. Do not invent successful execution; the backend will execute and record approved actions.`;
 const monitorPrompt = `You are MonitorCheck, the validation agent in ForgeAI. Return only JSON matching the requested schema. Base conclusions only on supplied workspace and command evidence. Mark unavailable checks as skipped or blocked; never invent errors.`;
 const bugPrompt = `You are Bug, the diagnosis agent in ForgeAI. Return only JSON matching the requested schema. Use only the supplied validation failure and workspace evidence. Give a minimal repair plan and be explicit when the issue is not safely repairable.`;
@@ -115,9 +115,9 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
   const project = await db.collection<ProjectDoc>("projects").findOne({ _id: run.projectId, userId: run.userId });
   if (!project) throw new Error("Project not found");
   const root = await workspaceFor(run.projectId);
+  await transition(db, run, "inspecting", "brain", "Brain inspected the project workspace");
   const inspected = await inspectWorkspace(root);
   await recordTool(db, run, "brain", "workspace.inspect", {}, inspected);
-  await transition(db, run, "inspecting", "brain", "Brain inspected the project workspace");
   const brain = await getForgeAgent().completeStructured([{ role: "system", content: brainPrompt }, { role: "user", content: JSON.stringify({ request: run.request, project: { name: project.name, description: project.description, files: project.files }, workspace: inspected, outputSchema: "summary, assumptions, acceptanceCriteria, steps, commands, validationPlan, needsUserInput, blockedReason" }) }], value => planSchema.parse(value));
   run.plan = brain;
   await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { plan: brain, updatedAt: new Date() } });
@@ -129,7 +129,7 @@ async function executeDevelopmentRun(run: DevelopmentRunDoc) {
     run.attempt += 1;
     await db.collection<DevelopmentRunDoc>("developmentRuns").updateOne({ _id: run._id }, { $set: { attempt: run.attempt, updatedAt: new Date() } });
     await transition(db, run, run.attempt === 1 ? "implementing" : "repairing", run.attempt === 1 ? "code2" : "bug", `${run.attempt === 1 ? "Code2 is implementing" : "Code2 is applying a repair"} attempt ${run.attempt}`);
-    const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
+    const implementation = await getForgeAgent().completeStructured([{ role: "system", content: code2Prompt }, { role: "user", content: JSON.stringify({ request: run.request, plan: brain, previousDiagnosis: run.diagnosis ?? null, workspace: await inspectWorkspace(root), outputSchema: "summary, actions, filesChanged, handoff" }) }], value => implementationSchema.parse(value));
     for (const action of implementation.actions) {
       if (action.type === "write" && action.path && action.content !== undefined) {
         const target = safePath(root, action.path);

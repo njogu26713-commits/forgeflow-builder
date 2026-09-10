@@ -242,13 +242,38 @@ export default function Home() {
         setActiveProjectId(next.id);
         projectId = next.id;
       }
-      const result = await forgeaiApi.agentChat({ projectId, message: userPrompt, provider: 'groq' });
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const userMsg: ChatMessage = { id: `user-${Date.now()}`, sender: 'user', text: userPrompt, timestamp };
-      const agentMsg: ChatMessage = { id: `agent-${Date.now()}`, sender: 'coder', text: result.response, timestamp };
-      setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, userMsg, agentMsg], lastActive: 'Just now' } : project));
+      setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, userMsg], lastActive: 'Just now' } : project));
       setActiveSection('projects');
       setWorkspaceMode('split-workspace');
+      const runResult = await forgeaiApi.createRun(projectId, { message: userPrompt, maxAttempts: 3 });
+      let sequence = -1;
+      const agentRole = (agent?: string | null): AgentRole => {
+        const roles: Record<string, AgentRole> = { brain: 'planner', code2: 'coder', monitorcheck: 'preview', bug: 'debugger' };
+        return roles[agent ?? ''] ?? 'coder';
+      };
+      const terminalStatuses = new Set(['completed', 'failed', 'blocked', 'cancelled']);
+      for (let poll = 0; poll < 600; poll += 1) {
+        const [{ run }, { events }] = await Promise.all([forgeaiApi.run(runResult.run.id), forgeaiApi.runEvents(runResult.run.id, sequence)]);
+        if (events.length) {
+          sequence = events[events.length - 1].sequence;
+          const messages = events.filter(event => event.message && ['agent_message', 'plan_created', 'validation_result', 'diagnosis', 'run_completed', 'run_failed'].includes(event.kind)).map(event => ({
+            id: `run-${runResult.run.id}-${event.sequence}`,
+            sender: agentRole(event.agent),
+            text: event.message ?? '',
+            timestamp: new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            technicalDetails: event.payload ? { errors: Array.isArray(event.payload.failures) ? event.payload.failures.map(String) : undefined, handoffTo: event.agent ?? undefined } : undefined,
+          } satisfies ChatMessage));
+          if (messages.length) setProjects(prev => prev.map(project => project.id === projectId ? { ...project, messages: [...project.messages, ...messages] } : project));
+        }
+        setActiveAgentTyping(run.currentAgent ? agentRole(run.currentAgent) : 'planner');
+        if (terminalStatuses.has(run.status)) {
+          if (run.status !== 'completed') toast.error(run.lastError ?? `Development run ${run.status}`);
+          break;
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The ForgeAI agent is unavailable');
     } finally {
